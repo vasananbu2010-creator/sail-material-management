@@ -42,6 +42,7 @@ class AIAnalyzer:
         tables = parsed_doc.get("tables", [])
 
         # Step 2: Semantic Analysis (UI Step 4)
+        print(f"[ANALYSIS] started: file={original_filename}, text_len={len(extracted_text)}, tables={len(tables)}", flush=True)
         if on_progress:
             try:
                 on_progress(4, "Analyzing Document...", "Detecting procurement proposal semantics & context", 72)
@@ -68,6 +69,7 @@ class AIAnalyzer:
             parsed_doc=parsed_doc,
             original_filename=original_filename
         )
+        print(f"[ANALYSIS] completed: materials_count={len(materials)}, doc_type={structured_template.document_information.document_type}", flush=True)
 
         # Step 5: Optional LLM Refinement if API key configured
         if (self.gemini_key or self.openai_key) and len(extracted_text) > 50:

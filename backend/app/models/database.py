@@ -37,4 +37,22 @@ def get_db():
 
 def init_db():
     from app.models.models import Document, MaterialItem, ActivityLog
+    from sqlalchemy import text
     Base.metadata.create_all(bind=engine)
+
+    # Safe migration: ensure progress tracking columns exist in documents table
+    try:
+        with engine.connect() as conn:
+            for col, col_type, default_val in [
+                ("current_step", "INTEGER", "1"),
+                ("step_label", "VARCHAR(200)", "'Uploaded'"),
+                ("step_detail", "VARCHAR(500)", "'Ready for processing'"),
+                ("progress_percent", "INTEGER", "0"),
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE documents ADD COLUMN {col} {col_type} DEFAULT {default_val}"))
+                    conn.commit()
+                except Exception:
+                    pass
+    except Exception:
+        pass

@@ -14,8 +14,10 @@ import pathlib
 import datetime
 import uuid
 import threading
+import time
+import traceback
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, BackgroundTasks
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
 
@@ -113,11 +115,14 @@ def list_documents(db: Session = Depends(get_db)):
 PROCESSING_STATUS: Dict[str, Dict[str, Any]] = {}
 
 def _execute_document_processing(doc_id: str):
-    """Background worker thread for asynchronous document processing."""
+    """Background worker for asynchronous document processing."""
+    t0 = time.time()
+    print(f"[PROCESS] started: document_id={doc_id}", flush=True)
     db = SessionLocal()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
+            print(f"[PROCESS] ERROR: Document record {doc_id} not found in database", flush=True)
             PROCESSING_STATUS[doc_id] = {
                 "document_id": doc_id,
                 "status": "FAILED",
@@ -129,20 +134,44 @@ def _execute_document_processing(doc_id: str):
             }
             return
 
+        print(f"[PROCESS] file found: path={doc.stored_path}, size={doc.file_size_bytes} bytes, original_name={doc.original_name}", flush=True)
+
         doc.status = "PROCESSING"
         doc.error_message = None
+        doc.current_step = 2
+        doc.step_label = "Extracting PDF Text..."
+        doc.step_detail = "Starting background OCR and analysis pipeline..."
+        doc.progress_percent = 10
         db.commit()
+        print(f"[PROCESS] database status updated: status=PROCESSING, step=2 (10%) - Extracting PDF Text...", flush=True)
 
         def on_progress(step: int, label: str, detail: str, percent: int):
+            status = "COMPLETED" if step >= 7 else "PROCESSING"
             PROCESSING_STATUS[doc_id] = {
                 "document_id": doc_id,
-                "status": "COMPLETED" if step >= 7 else "PROCESSING",
+                "status": status,
                 "current_step": step,
                 "step_label": label,
                 "step_detail": detail,
                 "progress_percent": percent,
                 "error": None
             }
+            try:
+                d = db.query(Document).filter(Document.id == doc_id).first()
+                if d:
+                    d.status = status
+                    d.current_step = step
+                    d.step_label = label
+                    d.step_detail = detail
+                    d.progress_percent = percent
+                    db.commit()
+                print(f"[PROCESS] database status updated: status={status}, step={step} ({percent}%) - {label}: {detail}", flush=True)
+            except Exception as dberr:
+                print(f"[PROCESS] Warning updating progress in DB: {dberr}", flush=True)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
 
         on_progress(2, "Extracting PDF Text...", "Analyzing document structure and layout", 12)
 
@@ -154,8 +183,13 @@ def _execute_document_processing(doc_id: str):
         template: FixedOutputTemplate = analysis_result["structured_data"]
         materials_count = analysis_result["materials_count"]
 
+        doc = db.query(Document).filter(Document.id == doc_id).first()
         doc.page_count = parsed_doc.get("page_count", 1)
         doc.status = "COMPLETED"
+        doc.current_step = 7
+        doc.step_label = "Completed"
+        doc.step_detail = f"Successfully extracted {materials_count} materials ({template.confidence.overall_confidence} confidence)"
+        doc.progress_percent = 100
         doc.processing_timestamp = datetime.datetime.utcnow()
         doc.overall_confidence = template.confidence.overall_confidence
         doc.confidence_score = template.confidence.confidence_score
@@ -199,6 +233,9 @@ def _execute_document_processing(doc_id: str):
         db.commit()
         db.refresh(doc)
 
+        elapsed = round(time.time() - t0, 2)
+        print(f"[PROCESS] completed: document_id={doc.id}, time={elapsed}s, materials={materials_count}", flush=True)
+
         PROCESSING_STATUS[doc_id] = {
             "document_id": doc.id,
             "status": "COMPLETED",
@@ -213,14 +250,19 @@ def _execute_document_processing(doc_id: str):
         }
     except Exception as ex:
         err_msg = str(ex)
+        full_tb = traceback.format_exc()
+        print(f"[PROCESS] ERROR with full traceback for {doc_id}:\n{full_tb}", flush=True)
         try:
             doc = db.query(Document).filter(Document.id == doc_id).first()
             if doc:
                 doc.status = "FAILED"
+                doc.current_step = 1
+                doc.step_label = "Failed"
+                doc.step_detail = f"Processing error: {err_msg}"
                 doc.error_message = err_msg
                 db.commit()
-        except Exception:
-            pass
+        except Exception as dberr:
+            print(f"[PROCESS] Failed to record error in DB: {dberr}", flush=True)
         PROCESSING_STATUS[doc_id] = {
             "document_id": doc_id,
             "status": "FAILED",
@@ -236,26 +278,28 @@ def _execute_document_processing(doc_id: str):
 @router.get("/{doc_id}/status")
 def get_document_status(doc_id: str, db: Session = Depends(get_db)):
     """Live status and real-time step polling endpoint."""
-    if doc_id in PROCESSING_STATUS:
-        info = dict(PROCESSING_STATUS[doc_id])
-        if info.get("status") == "COMPLETED" and not info.get("structured_data"):
-            doc = db.query(Document).filter(Document.id == doc_id).first()
-            if doc and doc.structured_json:
-                info["structured_data"] = doc.structured_json
-        return info
-
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    # If memory status exists and is up to date, use it
+    active = PROCESSING_STATUS.get(doc_id)
+    if active and active.get("status") == "COMPLETED" and not active.get("structured_data"):
+        if doc.structured_json:
+            active["structured_data"] = doc.structured_json
+
+    if active and (active.get("progress_percent", 0) >= (doc.progress_percent or 0)):
+        return active
+
+    # Return persistent DB state
     if doc.status == "COMPLETED" and doc.structured_json:
         return {
             "document_id": doc.id,
             "status": "COMPLETED",
-            "current_step": 7,
-            "step_label": "Completed",
-            "step_detail": "Analysis ready for review and multi-format export",
-            "progress_percent": 100,
+            "current_step": doc.current_step or 7,
+            "step_label": doc.step_label or "Completed",
+            "step_detail": doc.step_detail or "Analysis ready for review and multi-format export",
+            "progress_percent": doc.progress_percent or 100,
             "materials_count": len(doc.structured_json.get("materials", [])),
             "overall_confidence": doc.overall_confidence,
             "structured_data": doc.structured_json,
@@ -265,19 +309,19 @@ def get_document_status(doc_id: str, db: Session = Depends(get_db)):
         return {
             "document_id": doc.id,
             "status": "PROCESSING",
-            "current_step": 3,
-            "step_label": "OCR Processing...",
-            "step_detail": "Scanned page rasterization & character recognition",
-            "progress_percent": 45,
+            "current_step": doc.current_step or 2,
+            "step_label": doc.step_label or "Processing...",
+            "step_detail": doc.step_detail or "Analyzing document...",
+            "progress_percent": doc.progress_percent or 15,
             "error": None
         }
     elif doc.status == "FAILED":
         return {
             "document_id": doc.id,
             "status": "FAILED",
-            "current_step": 1,
-            "step_label": "Failed",
-            "step_detail": doc.error_message or "Processing failed",
+            "current_step": doc.current_step or 1,
+            "step_label": doc.step_label or "Failed",
+            "step_detail": doc.step_detail or doc.error_message or "Processing failed",
             "progress_percent": 0,
             "error": doc.error_message or "Processing failed"
         }
@@ -285,15 +329,15 @@ def get_document_status(doc_id: str, db: Session = Depends(get_db)):
         return {
             "document_id": doc.id,
             "status": doc.status or "UPLOADED",
-            "current_step": 1,
-            "step_label": "Uploaded",
-            "step_detail": "Ready for processing",
-            "progress_percent": 5,
+            "current_step": doc.current_step or 1,
+            "step_label": doc.step_label or "Uploaded",
+            "step_detail": doc.step_detail or "Ready for processing",
+            "progress_percent": doc.progress_percent or 5,
             "error": None
         }
 
 @router.post("/{doc_id}/process")
-def process_document(doc_id: str, force: bool = False, db: Session = Depends(get_db)):
+def process_document(doc_id: str, background_tasks: BackgroundTasks, force: bool = False, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -319,9 +363,13 @@ def process_document(doc_id: str, force: bool = False, db: Session = Depends(get
     if not pathlib.Path(doc.stored_path).exists():
         raise HTTPException(status_code=404, detail="Stored document file not found on disk")
 
-    # Mark document as PROCESSING
+    # Mark document as PROCESSING in DB immediately
     doc.status = "PROCESSING"
     doc.error_message = None
+    doc.current_step = 2
+    doc.step_label = "Extracting PDF Text..."
+    doc.step_detail = "Starting background OCR and analysis pipeline..."
+    doc.progress_percent = 10
     db.commit()
 
     PROCESSING_STATUS[doc_id] = {
@@ -334,14 +382,8 @@ def process_document(doc_id: str, force: bool = False, db: Session = Depends(get
         "error": None
     }
 
-    # Launch background thread to prevent any HTTP proxy / gateway timeout
-    worker = threading.Thread(
-        target=_execute_document_processing,
-        args=(doc_id,),
-        daemon=True,
-        name=f"doc-proc-{doc_id[:8]}"
-    )
-    worker.start()
+    # Launch background task via FastAPI BackgroundTasks
+    background_tasks.add_task(_execute_document_processing, doc_id)
 
     return {
         "message": "Document processing started in background",

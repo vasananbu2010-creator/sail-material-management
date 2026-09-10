@@ -1,4 +1,4 @@
-﻿"""
+"""
 SQLAlchemy ORM Models for Documents, Materials, and Audit Activities
 """
 import datetime
@@ -27,6 +27,11 @@ class Document(Base):
     verification_needed_count = Column(Integer, default=0)
     document_type = Column(String(100), default="Procurement Document")
     department = Column(String(100), default="Salem Steel Plant")
+    
+    current_step = Column(Integer, default=1)
+    step_label = Column(String(200), default="Uploaded")
+    step_detail = Column(String(500), default="Ready for processing")
+    progress_percent = Column(Integer, default=0)
     
     raw_ocr_text = Column(Text, default="")
     structured_json = Column(JSON, default=dict)

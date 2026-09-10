@@ -106,6 +106,7 @@ class DocumentParser:
         try:
             with pdfplumber.open(pdf_path) as pdf:
                 page_count = len(pdf.pages)
+                print(f"[PROCESS] PDF pages detected: {page_count}", flush=True)
                 for i, page in enumerate(pdf.pages):
                     ptxt = page.extract_text() or ""
                     pages_text.append(ptxt)
@@ -205,6 +206,7 @@ class DocumentParser:
 
                     # Bounded concurrent OCR with per-page and dynamic overall timeouts
                     batch_timeout = max(180, len(temp_files) * 20)
+                    print(f"[OCR] started: scanning {len(temp_files)} pages via OCR engine", flush=True)
                     ocr_results = ocr_engine.run_ocr_batch(
                         temp_files,
                         page_timeout=15,

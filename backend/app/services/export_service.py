@@ -19,11 +19,21 @@ class ExportService:
     def __init__(self):
         pass
 
-    def export_docx(self, structured_data: Dict[str, Any], filename: str) -> io.BytesIO:
-        """Generates the official 2-page SAIL Salem Steel Plant Procurement Template editable DOCX."""
-        return generate_procurement_template_docx(structured_data, filename)
+    def _ensure_dict(self, data: Any) -> Dict[str, Any]:
+        if isinstance(data, str):
+            try:
+                return json.loads(data)
+            except Exception:
+                return {}
+        return data or {}
 
-    def export_excel(self, structured_data: Dict[str, Any], filename: str) -> io.BytesIO:
+    def export_docx(self, structured_data: Any, filename: str) -> io.BytesIO:
+        """Generates the official 2-page SAIL Salem Steel Plant Procurement Template editable DOCX."""
+        data = self._ensure_dict(structured_data)
+        return generate_procurement_template_docx(data, filename)
+
+    def export_excel(self, structured_data: Any, filename: str) -> io.BytesIO:
+        structured_data = self._ensure_dict(structured_data)
         wb = openpyxl.Workbook()
         ws_summary = wb.active
         ws_summary.title = "Procurement Summary"
@@ -156,11 +166,13 @@ class ExportService:
         output.seek(0)
         return output
 
-    def export_pdf(self, structured_data: Dict[str, Any], filename: str) -> io.BytesIO:
+    def export_pdf(self, structured_data: Any, filename: str) -> io.BytesIO:
         """Generates the official 2-page SAIL Salem Steel Plant Procurement Template PDF."""
-        return generate_procurement_template_pdf(structured_data, filename)
+        data = self._ensure_dict(structured_data)
+        return generate_procurement_template_pdf(data, filename)
 
-    def export_json(self, structured_data: Dict[str, Any]) -> str:
-        return json.dumps(structured_data, indent=2)
+    def export_json(self, structured_data: Any) -> str:
+        data = self._ensure_dict(structured_data)
+        return json.dumps(data, indent=2)
 
 export_service = ExportService()
