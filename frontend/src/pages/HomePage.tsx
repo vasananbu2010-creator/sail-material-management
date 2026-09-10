@@ -51,19 +51,13 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
     try {
       // Step 2: Extracting PDF Text...
       setCurrentStep(2);
-      const processPromise = api.processDocument(docId);
-
-      // Advance to Step 3 (OCR Processing...) after quick initial text check
-      await Promise.race([
-        processPromise,
-        new Promise((r) => setTimeout(r, 1200))
-      ]);
+      await new Promise((r) => setTimeout(r, 300));
 
       // Step 3: OCR Processing... (Holds here while the backend performs multi-page OCR)
       setCurrentStep(3);
 
       // Await real backend completion
-      await processPromise;
+      await api.processDocument(docId);
 
       // When backend completes, rapidly advance through remaining semantic & schema stages
       setCurrentStep(4); // Analyzing Document...

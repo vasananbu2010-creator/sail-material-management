@@ -9,6 +9,7 @@ Handles:
 """
 import os
 import json
+import hashlib
 import pathlib
 import tempfile
 from typing import Dict, Any, List, Tuple
@@ -72,6 +73,17 @@ class DocumentParser:
 
         return res
 
+    def _compute_sha256(self, path: str) -> str:
+        """Computes SHA-256 hash of a file for content-based OCR caching."""
+        h = hashlib.sha256()
+        try:
+            with open(path, "rb") as f:
+                while chunk := f.read(65536):
+                    h.update(chunk)
+            return h.hexdigest()
+        except Exception:
+            return ""
+
     def _parse_pdf(self, pdf_path: str, original_filename: str) -> Dict[str, Any]:
         """Multi-page PDF extraction with scanned PDF detection and OCR fallback."""
         pages_text: List[str] = []
@@ -118,34 +130,51 @@ class DocumentParser:
         # Check if scanned (very little or no digital text across all pages)
         if len(combined_text) < 40 and page_count > 0:
             is_scanned = True
-            cache_file = pathlib.Path(pdf_path).with_suffix(".ocr.json")
-            if cache_file.exists():
-                try:
-                    pages_text = json.loads(cache_file.read_text(encoding="utf-8"))
-                    combined_text = "\n\n".join(pages_text).strip()
-                except Exception:
-                    pass
+
+            # Content-hash based OCR cache check (Requirement 14 & 15)
+            file_hash = self._compute_sha256(pdf_path)
+            cache_dir = pathlib.Path(pdf_path).parent / ".ocr_cache"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            hash_cache_file = cache_dir / f"{file_hash}.json" if file_hash else None
+            direct_cache_file = pathlib.Path(pdf_path).with_suffix(".ocr.json")
+
+            cached_candidates = [hash_cache_file, direct_cache_file] if hash_cache_file else [direct_cache_file]
+            for cf in cached_candidates:
+                if cf and cf.exists():
+                    try:
+                        loaded_pages = json.loads(cf.read_text(encoding="utf-8"))
+                        loaded_text = "\n\n".join(loaded_pages).strip()
+                        if len(loaded_text) > 40:
+                            pages_text = loaded_pages
+                            combined_text = loaded_text
+                            break
+                    except Exception:
+                        pass
 
             if not pages_text or len(combined_text) < 40:
+                temp_dir = pathlib.Path(pdf_path).parent / ".ocr_temp"
+                temp_dir.mkdir(parents=True, exist_ok=True)
                 temp_files: List[str] = []
                 try:
                     pdf_doc = pdfium.PdfDocument(pdf_path)
                     for p_idx in range(len(pdf_doc)):
                         img = pdf_doc[p_idx].render(scale=2).to_pil()
-                        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        with tempfile.NamedTemporaryFile(dir=str(temp_dir), suffix=".png", delete=False) as tmp:
                             tmp_path = tmp.name
                         img.save(tmp_path)
                         temp_files.append(tmp_path)
 
-                    # High performance batch OCR (single-process on Windows, threaded on Linux)
-                    ocr_results = ocr_engine.run_ocr_batch(temp_files)
+                    # Bounded concurrent OCR with per-page and overall timeouts (Requirement 7 & 9)
+                    ocr_results = ocr_engine.run_ocr_batch(temp_files, page_timeout=15, total_timeout=38)
                     pages_text = [r.get("text", "") for r in ocr_results]
                     combined_text = "\n\n".join(pages_text).strip()
 
-                    # Save to persistent disk cache for immediate instant retries
-                    if combined_text:
+                    # Save to persistent disk caches for instant subsequent processing (Requirement 14 & 15)
+                    if combined_text and len(combined_text) > 40:
                         try:
-                            cache_file.write_text(json.dumps(pages_text, ensure_ascii=False), encoding="utf-8")
+                            if hash_cache_file:
+                                hash_cache_file.write_text(json.dumps(pages_text, ensure_ascii=False), encoding="utf-8")
+                            direct_cache_file.write_text(json.dumps(pages_text, ensure_ascii=False), encoding="utf-8")
                         except Exception:
                             pass
                 except Exception as ocr_err:
