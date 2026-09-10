@@ -34,6 +34,8 @@ interface HomePageProps {
 export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDashboard }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
+  const [stepDetail, setStepDetail] = useState<string>('');
+  const [progressPercent, setProgressPercent] = useState<number>(0);
   const [processingFileName, setProcessingFileName] = useState('');
   const [activeDocument, setActiveDocument] = useState<DocumentDetail | null>(null);
   const [ocrText, setOcrText] = useState<string>('');
@@ -47,30 +49,20 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
     setLastDocId(docId);
     setError(null);
     setCurrentStep(1);
+    setStepDetail('Validating file integrity & size limit');
+    setProgressPercent(10);
 
     try {
-      // Step 2: Extracting PDF Text...
-      setCurrentStep(2);
-      await new Promise((r) => setTimeout(r, 300));
+      // Connect directly to live backend progress polling
+      await api.processDocument(docId, (info) => {
+        setCurrentStep(info.current_step);
+        setStepDetail(info.step_detail);
+        setProgressPercent(info.progress_percent);
+      });
 
-      // Step 3: OCR Processing... (Holds here while the backend performs multi-page OCR)
-      setCurrentStep(3);
-
-      // Await real backend completion
-      await api.processDocument(docId);
-
-      // When backend completes, rapidly advance through remaining semantic & schema stages
-      setCurrentStep(4); // Analyzing Document...
-      await new Promise((r) => setTimeout(r, 200));
-
-      setCurrentStep(5); // Extracting Materials...
-      await new Promise((r) => setTimeout(r, 200));
-
-      setCurrentStep(6); // Creating Structured Output...
-      await new Promise((r) => setTimeout(r, 200));
-
-      setCurrentStep(7); // Completed
-      await new Promise((r) => setTimeout(r, 250));
+      setCurrentStep(7);
+      setProgressPercent(100);
+      setStepDetail('Analysis ready for review');
 
       // Fetch complete details & OCR text
       const docDetails = await api.getDocument(docId);
@@ -131,6 +123,8 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
     setError(null);
     setLastDocId(null);
     setCurrentStep(1);
+    setStepDetail('');
+    setProgressPercent(0);
     setActiveTab('structured');
   };
 
@@ -218,7 +212,12 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
       {/* Processing Animation Screen (Section 23) */}
       {isProcessing && (
         <div className="py-12">
-          <ProcessingProgress currentStep={currentStep} filename={processingFileName} />
+          <ProcessingProgress
+            currentStep={currentStep}
+            filename={processingFileName}
+            stepDetail={stepDetail}
+            progressPercent={progressPercent}
+          />
         </div>
       )}
 

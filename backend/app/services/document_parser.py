@@ -12,12 +12,13 @@ import json
 import hashlib
 import pathlib
 import tempfile
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import pdfplumber
 import pypdf
 import pypdfium2 as pdfium
 import docx
 import openpyxl
+from PIL import ImageStat
 
 from app.services.ocr_service import ocr_engine
 
@@ -25,7 +26,7 @@ class DocumentParser:
     def __init__(self):
         self._cache: Dict[str, Dict[str, Any]] = {}
 
-    def parse_file(self, file_path: str, original_filename: str) -> Dict[str, Any]:
+    def parse_file(self, file_path: str, original_filename: str, on_progress: Optional[Any] = None) -> Dict[str, Any]:
         p = pathlib.Path(file_path).resolve()
         if not p.exists():
             return {
@@ -43,6 +44,11 @@ class DocumentParser:
             stat = p.stat()
             cache_key = f"{p}_{stat.st_size}_{stat.st_mtime}"
             if cache_key in self._cache:
+                if on_progress:
+                    try:
+                        on_progress(3, "OCR Processing...", "Loaded document structure from cache", 65)
+                    except Exception:
+                        pass
                 return dict(self._cache[cache_key])
         except Exception:
             cache_key = None
@@ -50,7 +56,7 @@ class DocumentParser:
         ext = p.suffix.lower()
 
         if ext == ".pdf":
-            res = self._parse_pdf(str(p), original_filename)
+            res = self._parse_pdf(str(p), original_filename, on_progress=on_progress)
         elif ext in [".docx", ".doc"]:
             res = self._parse_docx(str(p), original_filename)
         elif ext in [".xlsx", ".xls"]:
@@ -84,11 +90,17 @@ class DocumentParser:
         except Exception:
             return ""
 
-    def _parse_pdf(self, pdf_path: str, original_filename: str) -> Dict[str, Any]:
+    def _parse_pdf(self, pdf_path: str, original_filename: str, on_progress: Optional[Any] = None) -> Dict[str, Any]:
         """Multi-page PDF extraction with scanned PDF detection and OCR fallback."""
         pages_text: List[str] = []
         all_tables: List[List[List[str]]] = []
         is_scanned = False
+
+        if on_progress:
+            try:
+                on_progress(2, "Extracting PDF Text...", "Reading vector text, fonts, and layout", 15)
+            except Exception:
+                pass
 
         # Phase 1: Try digital text & table extraction via pdfplumber
         try:
@@ -130,6 +142,11 @@ class DocumentParser:
         # Check if scanned (very little or no digital text across all pages)
         if len(combined_text) < 40 and page_count > 0:
             is_scanned = True
+            if on_progress:
+                try:
+                    on_progress(2, "Extracting PDF Text...", f"Scanned PDF detected ({page_count} pages). Checking cache...", 18)
+                except Exception:
+                    pass
 
             # Content-hash based OCR cache check (Requirement 14 & 15)
             file_hash = self._compute_sha256(pdf_path)
@@ -147,6 +164,11 @@ class DocumentParser:
                         if len(loaded_text) > 40:
                             pages_text = loaded_pages
                             combined_text = loaded_text
+                            if on_progress:
+                                try:
+                                    on_progress(3, "OCR Processing...", f"Loaded OCR results for {page_count} pages from cache", 65)
+                                except Exception:
+                                    pass
                             break
                     except Exception:
                         pass
@@ -157,15 +179,38 @@ class DocumentParser:
                 temp_files: List[str] = []
                 try:
                     pdf_doc = pdfium.PdfDocument(pdf_path)
-                    for p_idx in range(len(pdf_doc)):
+                    total_pages = len(pdf_doc)
+                    if on_progress:
+                        try:
+                            on_progress(3, "OCR Processing...", f"Rendering {total_pages} high-resolution page images...", 20)
+                        except Exception:
+                            pass
+
+                    for p_idx in range(total_pages):
                         img = pdf_doc[p_idx].render(scale=2).to_pil()
                         with tempfile.NamedTemporaryFile(dir=str(temp_dir), suffix=".png", delete=False) as tmp:
                             tmp_path = tmp.name
                         img.save(tmp_path)
                         temp_files.append(tmp_path)
 
-                    # Bounded concurrent OCR with per-page and overall timeouts (Requirement 7 & 9)
-                    ocr_results = ocr_engine.run_ocr_batch(temp_files, page_timeout=15, total_timeout=38)
+                    # Dynamic batch progress callback
+                    def ocr_progress_cb(done_count: int, total_count: int):
+                        if on_progress:
+                            try:
+                                pct = 20 + int((done_count / max(1, total_count)) * 45) # 20% to 65%
+                                p_label = int((done_count / max(1, total_count)) * 100)
+                                on_progress(3, "OCR Processing...", f"Scanning page {done_count} of {total_count} ({p_label}%)", pct)
+                            except Exception:
+                                pass
+
+                    # Bounded concurrent OCR with per-page and dynamic overall timeouts
+                    batch_timeout = max(180, len(temp_files) * 20)
+                    ocr_results = ocr_engine.run_ocr_batch(
+                        temp_files,
+                        page_timeout=15,
+                        total_timeout=batch_timeout,
+                        progress_callback=ocr_progress_cb
+                    )
                     pages_text = [r.get("text", "") for r in ocr_results]
                     combined_text = "\n\n".join(pages_text).strip()
 

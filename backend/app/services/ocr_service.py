@@ -67,6 +67,7 @@ class OCRService:
             "stdout",
             "-l", "eng",
             "--oem", "1",
+            "--dpi", "144",
             "-c", "tessedit_do_invert=0"
         ]
 
@@ -179,21 +180,35 @@ class OCRService:
         # Cross-platform Tesseract fallback
         return self._run_tesseract_page(str(img_p), timeout=timeout)
 
-    def run_ocr_batch(self, image_paths: List[str], page_timeout: int = 15, total_timeout: int = 38) -> List[Dict[str, Any]]:
+    def run_ocr_batch(
+        self,
+        image_paths: List[str],
+        page_timeout: int = 15,
+        total_timeout: Optional[int] = None,
+        progress_callback: Optional[Any] = None
+    ) -> List[Dict[str, Any]]:
         """
         Run bounded, non-blocking OCR across multiple pages.
         Guarantees:
         - Max 2 concurrent workers on Free Tier (zero CPU thrashing).
         - Hard per-page timeout (15s).
-        - Hard overall timeout budget (38s).
+        - Dynamic overall timeout budget (default max(180, len(image_paths) * 20) seconds).
         - If any page times out or errors, remaining pages continue uninterrupted.
         - All workers are cleanly joined/canceled without process leakage.
         """
         if not image_paths:
             return []
 
+        effective_timeout = total_timeout if total_timeout is not None else max(180, len(image_paths) * 20)
+
         if len(image_paths) == 1:
-            return [self.run_ocr_on_image(image_paths[0], timeout=page_timeout)]
+            res = [self.run_ocr_on_image(image_paths[0], timeout=page_timeout)]
+            if progress_callback:
+                try:
+                    progress_callback(1, 1)
+                except Exception:
+                    pass
+            return res
 
         # On Windows: Try high-speed Windows.Media.Ocr batch process first
         if self.is_windows and self.runner_script.exists():
@@ -212,7 +227,7 @@ class OCRService:
                     "-File", str(self.runner_script),
                     "-ImageListFile", list_file_path
                 ]
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=total_timeout)
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=effective_timeout)
                 if proc.returncode == 0:
                     stdout = proc.stdout
                     pages_data: List[Dict[str, Any]] = []
@@ -233,10 +248,20 @@ class OCRService:
                         })
 
                     if len(pages_data) == len(image_paths):
+                        if progress_callback:
+                            try:
+                                progress_callback(len(image_paths), len(image_paths))
+                            except Exception:
+                                pass
                         return pages_data
                     elif len(pages_data) > 0:
                         while len(pages_data) < len(image_paths):
                             pages_data.append({"text": "", "lines": [], "confidence": 0.0, "confidence_str": "0%", "status": "missing", "engine": "Windows.Media.Ocr"})
+                        if progress_callback:
+                            try:
+                                progress_callback(len(image_paths), len(image_paths))
+                            except Exception:
+                                pass
                         return pages_data
             except Exception:
                 pass
@@ -251,6 +276,7 @@ class OCRService:
         import concurrent.futures
         max_workers = min(2, len(image_paths))
         results: List[Optional[Dict[str, Any]]] = [None] * len(image_paths)
+        completed_count = 0
 
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
         future_to_idx = {
@@ -259,8 +285,9 @@ class OCRService:
         }
 
         try:
-            for future in concurrent.futures.as_completed(future_to_idx, timeout=total_timeout):
+            for future in concurrent.futures.as_completed(future_to_idx, timeout=effective_timeout):
                 idx = future_to_idx[future]
+                completed_count += 1
                 try:
                     results[idx] = future.result()
                 except Exception as ex:
@@ -272,6 +299,11 @@ class OCRService:
                         "status": f"worker_error: {str(ex)[:60]}",
                         "engine": "None"
                     }
+                if progress_callback:
+                    try:
+                        progress_callback(completed_count, len(image_paths))
+                    except Exception:
+                        pass
         except concurrent.futures.TimeoutError:
             # Overall timeout reached: cancel any pending workers immediately
             pass

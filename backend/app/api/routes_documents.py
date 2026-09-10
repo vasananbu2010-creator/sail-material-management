@@ -13,11 +13,13 @@ import shutil
 import pathlib
 import datetime
 import uuid
+import threading
+from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
 
-from app.models.database import get_db
+from app.models.database import get_db, SessionLocal
 from app.models.models import Document, MaterialItem, ActivityLog
 from app.utils.file_validation import validate_uploaded_file, format_file_size, MAX_FILE_SIZE_BYTES
 from app.utils.security import sanitize_filename
@@ -107,31 +109,45 @@ def list_documents(db: Session = Depends(get_db)):
         })
     return results
 
-@router.post("/{doc_id}/process")
-def process_document(doc_id: str, force: bool = False, db: Session = Depends(get_db)):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+# In-memory tracking for real-time document processing progress and status polling
+PROCESSING_STATUS: Dict[str, Dict[str, Any]] = {}
 
-    # If already processed and not forced, return cached structured output instantly
-    if not force and doc.status == "COMPLETED" and doc.structured_json:
-        return {
-            "document_id": doc.id,
-            "status": doc.status,
-            "structured_data": doc.structured_json,
-            "materials_count": len(doc.structured_json.get("materials", [])),
-            "cached": True
-        }
-
-    if not pathlib.Path(doc.stored_path).exists():
-        raise HTTPException(status_code=404, detail="Stored document file not found on disk")
-
+def _execute_document_processing(doc_id: str):
+    """Background worker thread for asynchronous document processing."""
+    db = SessionLocal()
     try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            PROCESSING_STATUS[doc_id] = {
+                "document_id": doc_id,
+                "status": "FAILED",
+                "current_step": 1,
+                "step_label": "Failed",
+                "step_detail": "Document record not found",
+                "progress_percent": 0,
+                "error": "Document record not found"
+            }
+            return
+
         doc.status = "PROCESSING"
+        doc.error_message = None
         db.commit()
 
-        # Run AI & OCR analysis pipeline
-        analysis_result = ai_analyzer.analyze_document(doc.stored_path, doc.original_name)
+        def on_progress(step: int, label: str, detail: str, percent: int):
+            PROCESSING_STATUS[doc_id] = {
+                "document_id": doc_id,
+                "status": "COMPLETED" if step >= 7 else "PROCESSING",
+                "current_step": step,
+                "step_label": label,
+                "step_detail": detail,
+                "progress_percent": percent,
+                "error": None
+            }
+
+        on_progress(2, "Extracting PDF Text...", "Analyzing document structure and layout", 12)
+
+        # Run AI & OCR analysis pipeline with live progress callbacks
+        analysis_result = ai_analyzer.analyze_document(doc.stored_path, doc.original_name, on_progress=on_progress)
 
         parsed_doc = analysis_result["parsed_doc"]
         raw_text = analysis_result["raw_ocr_text"]
@@ -183,19 +199,158 @@ def process_document(doc_id: str, force: bool = False, db: Session = Depends(get
         db.commit()
         db.refresh(doc)
 
-        return {
-            "message": "Document processed successfully",
+        PROCESSING_STATUS[doc_id] = {
             "document_id": doc.id,
-            "status": doc.status,
+            "status": "COMPLETED",
+            "current_step": 7,
+            "step_label": "Completed",
+            "step_detail": f"Successfully extracted {materials_count} materials ({doc.overall_confidence} confidence)",
+            "progress_percent": 100,
             "materials_count": materials_count,
             "overall_confidence": doc.overall_confidence,
-            "structured_data": doc.structured_json
+            "structured_data": doc.structured_json,
+            "error": None
         }
     except Exception as ex:
-        doc.status = "FAILED"
-        doc.error_message = str(ex)
-        db.commit()
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(ex)}")
+        err_msg = str(ex)
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc:
+                doc.status = "FAILED"
+                doc.error_message = err_msg
+                db.commit()
+        except Exception:
+            pass
+        PROCESSING_STATUS[doc_id] = {
+            "document_id": doc_id,
+            "status": "FAILED",
+            "current_step": 1,
+            "step_label": "Failed",
+            "step_detail": f"Processing error: {err_msg}",
+            "progress_percent": 0,
+            "error": err_msg
+        }
+    finally:
+        db.close()
+
+@router.get("/{doc_id}/status")
+def get_document_status(doc_id: str, db: Session = Depends(get_db)):
+    """Live status and real-time step polling endpoint."""
+    if doc_id in PROCESSING_STATUS:
+        info = dict(PROCESSING_STATUS[doc_id])
+        if info.get("status") == "COMPLETED" and not info.get("structured_data"):
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc and doc.structured_json:
+                info["structured_data"] = doc.structured_json
+        return info
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.status == "COMPLETED" and doc.structured_json:
+        return {
+            "document_id": doc.id,
+            "status": "COMPLETED",
+            "current_step": 7,
+            "step_label": "Completed",
+            "step_detail": "Analysis ready for review and multi-format export",
+            "progress_percent": 100,
+            "materials_count": len(doc.structured_json.get("materials", [])),
+            "overall_confidence": doc.overall_confidence,
+            "structured_data": doc.structured_json,
+            "error": None
+        }
+    elif doc.status == "PROCESSING":
+        return {
+            "document_id": doc.id,
+            "status": "PROCESSING",
+            "current_step": 3,
+            "step_label": "OCR Processing...",
+            "step_detail": "Scanned page rasterization & character recognition",
+            "progress_percent": 45,
+            "error": None
+        }
+    elif doc.status == "FAILED":
+        return {
+            "document_id": doc.id,
+            "status": "FAILED",
+            "current_step": 1,
+            "step_label": "Failed",
+            "step_detail": doc.error_message or "Processing failed",
+            "progress_percent": 0,
+            "error": doc.error_message or "Processing failed"
+        }
+    else:
+        return {
+            "document_id": doc.id,
+            "status": doc.status or "UPLOADED",
+            "current_step": 1,
+            "step_label": "Uploaded",
+            "step_detail": "Ready for processing",
+            "progress_percent": 5,
+            "error": None
+        }
+
+@router.post("/{doc_id}/process")
+def process_document(doc_id: str, force: bool = False, db: Session = Depends(get_db)):
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # If already processed and not forced, return cached structured output instantly
+    if not force and doc.status == "COMPLETED" and doc.structured_json:
+        return {
+            "document_id": doc.id,
+            "status": doc.status,
+            "current_step": 7,
+            "step_label": "Completed",
+            "progress_percent": 100,
+            "structured_data": doc.structured_json,
+            "materials_count": len(doc.structured_json.get("materials", [])),
+            "cached": True
+        }
+
+    # If already processing in background and not forced, return current progress
+    active = PROCESSING_STATUS.get(doc_id)
+    if not force and active and active.get("status") == "PROCESSING":
+        return active
+
+    if not pathlib.Path(doc.stored_path).exists():
+        raise HTTPException(status_code=404, detail="Stored document file not found on disk")
+
+    # Mark document as PROCESSING
+    doc.status = "PROCESSING"
+    doc.error_message = None
+    db.commit()
+
+    PROCESSING_STATUS[doc_id] = {
+        "document_id": doc.id,
+        "status": "PROCESSING",
+        "current_step": 2,
+        "step_label": "Extracting PDF Text...",
+        "step_detail": "Starting background OCR and analysis pipeline...",
+        "progress_percent": 10,
+        "error": None
+    }
+
+    # Launch background thread to prevent any HTTP proxy / gateway timeout
+    worker = threading.Thread(
+        target=_execute_document_processing,
+        args=(doc_id,),
+        daemon=True,
+        name=f"doc-proc-{doc_id[:8]}"
+    )
+    worker.start()
+
+    return {
+        "message": "Document processing started in background",
+        "document_id": doc.id,
+        "status": "PROCESSING",
+        "current_step": 2,
+        "step_label": "Extracting PDF Text...",
+        "progress_percent": 10
+    }
 
 @router.get("/{doc_id}")
 def get_document(doc_id: str, db: Session = Depends(get_db)):

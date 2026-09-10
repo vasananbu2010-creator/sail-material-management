@@ -22,38 +22,72 @@ export const api = {
     return res.json();
   },
 
-  async processDocument(docId: string): Promise<{ document_id: string; status: string; structured_data: any }> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 85000);
-
-    try {
-      const res = await fetch(`${API_BASE}/documents/${docId}/process`, {
-        method: 'POST',
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!res.ok) {
-        let detail = `Server error (${res.status}): Processing failed`;
-        try {
-          const err = await res.json();
-          if (err.detail) detail = err.detail;
-        } catch {
-          if (res.status === 504) {
-            detail = 'Cloud proxy timeout (504): Multi-page document is being processed in the background. Please click "Retry Processing" to retrieve the results.';
-          }
-        }
-        throw new Error(detail);
-      }
-      return res.json();
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (err.name === 'AbortError') {
-        throw new Error(
-          'Processing timeout: The multi-page document is taking longer to scan on the server. Please click "Retry Processing" to fetch results.'
-        );
-      }
-      throw err;
+  async processDocument(
+    docId: string,
+    onProgress?: (progress: { current_step: number; step_label: string; step_detail: string; progress_percent: number }) => void
+  ): Promise<{ document_id: string; status: string; structured_data: any }> {
+    // 1. Initiate processing on backend
+    const initRes = await fetch(`${API_BASE}/documents/${docId}/process`, {
+      method: 'POST',
+    });
+    if (!initRes.ok) {
+      const err = await initRes.json().catch(() => ({ detail: 'Failed to start processing' }));
+      throw new Error(err.detail || 'Failed to start document processing');
     }
+    const initData = await initRes.json();
+    if (initData.status === 'COMPLETED' && initData.structured_data) {
+      return initData;
+    }
+
+    // 2. Poll /status every 900ms (eliminates Render 100s proxy timeout)
+    const pollInterval = 900;
+    const maxWaitTimeMs = 600000; // 10 minutes max for massive multi-page scanned documents
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxWaitTimeMs) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+
+      try {
+        const statusRes = await fetch(`${API_BASE}/documents/${docId}/status`);
+        if (!statusRes.ok) continue;
+
+        const statusData = await statusRes.json();
+        if (onProgress && statusData.current_step) {
+          onProgress({
+            current_step: statusData.current_step,
+            step_label: statusData.step_label || 'Processing...',
+            step_detail: statusData.step_detail || '',
+            progress_percent: statusData.progress_percent || Math.round((statusData.current_step / 7) * 100),
+          });
+        }
+
+        if (statusData.status === 'COMPLETED') {
+          return {
+            document_id: docId,
+            status: 'COMPLETED',
+            structured_data: statusData.structured_data,
+          };
+        }
+
+        if (statusData.status === 'FAILED') {
+          throw new Error(statusData.error || 'Server error: Processing failed for this document.');
+        }
+      } catch (pollErr: any) {
+        if (pollErr.message && pollErr.message.includes('Server error: Processing failed')) {
+          throw pollErr;
+        }
+      }
+    }
+
+    throw new Error(
+      'Processing timeout: The multi-page document is taking longer to scan on the server. Please click "Retry Processing" to continue.'
+    );
+  },
+
+  async getDocumentStatus(docId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/status`);
+    if (!res.ok) throw new Error('Failed to fetch processing status');
+    return res.json();
   },
 
   async getDocument(docId: string): Promise<DocumentDetail> {

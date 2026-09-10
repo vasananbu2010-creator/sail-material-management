@@ -1,4 +1,4 @@
-﻿"""
+"""
 Modular AI Document Analyzer for SAIL Material Management Module
 Coordinates:
 1. Document Parsing & Layout Detection
@@ -34,17 +34,34 @@ class AIAnalyzer:
         self.gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         self.openai_key = os.getenv("OPENAI_API_KEY")
 
-    def analyze_document(self, file_path: str, original_filename: str) -> Dict[str, Any]:
+    def analyze_document(self, file_path: str, original_filename: str, on_progress: Optional[Any] = None) -> Dict[str, Any]:
         """Main end-to-end analysis pipeline."""
-        # Step 1: Multi-format parsing & OCR
-        parsed_doc = document_parser.parse_file(file_path, original_filename)
+        # Step 1: Multi-format parsing & OCR (UI Steps 2 & 3)
+        parsed_doc = document_parser.parse_file(file_path, original_filename, on_progress=on_progress)
         extracted_text = parsed_doc.get("text", "")
         tables = parsed_doc.get("tables", [])
 
-        # Step 2: Dynamic Material Extraction
+        # Step 2: Semantic Analysis (UI Step 4)
+        if on_progress:
+            try:
+                on_progress(4, "Analyzing Document...", "Detecting procurement proposal semantics & context", 72)
+            except Exception:
+                pass
+
+        # Step 3: Dynamic Material Extraction (UI Step 5)
+        if on_progress:
+            try:
+                on_progress(5, "Extracting Materials...", "Parsing BOM items, grades, quantities & vendors", 82)
+            except Exception:
+                pass
         materials = material_extractor.extract_materials(extracted_text, tables)
 
-        # Step 3: Fixed Output Template Mapping
+        # Step 4: Fixed Output Template Mapping (UI Step 6)
+        if on_progress:
+            try:
+                on_progress(6, "Creating Structured Output...", "Enforcing fixed 9-section enterprise schema", 92)
+            except Exception:
+                pass
         structured_template = template_mapper.map_to_template(
             extracted_text=extracted_text,
             materials=materials,
@@ -52,11 +69,17 @@ class AIAnalyzer:
             original_filename=original_filename
         )
 
-        # Step 4: Optional LLM Refinement if API key configured
+        # Step 5: Optional LLM Refinement if API key configured
         if (self.gemini_key or self.openai_key) and len(extracted_text) > 50:
             try:
                 # LLM can enrich fields if available
                 pass
+            except Exception:
+                pass
+
+        if on_progress:
+            try:
+                on_progress(7, "Completed", "Analysis ready for review and multi-format export", 100)
             except Exception:
                 pass
 
