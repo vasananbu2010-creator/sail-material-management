@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #101B24;
+    color: #F0F4F8;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom Scrollbar for Industrial Enterprise UI */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #101B24;
+}
+::-webkit-scrollbar-thumb {
+  background: #435568;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #A9C9EE;
+}
+
+/* Glassmorphism Card Style */
+.glass-card {
+  background: rgba(36, 49, 60, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #435568;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.glass-card-hover {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-card-hover:hover {
+  border-color: #A9C9EE;
+  box-shadow: 0 12px 36px 0 rgba(169, 201, 238, 0.08);
+  transform: translateY(-2px);
+}
+
+/* Industrial Steel Gradient Button */
+.btn-steel {
+  background: linear-gradient(180deg, #2D3E4E 0%, #1D2A35 100%);
+  border: 1px solid #435568;
+  color: #F0F4F8;
+  transition: all 0.2s ease;
+}
+.btn-steel:hover {
+  background: linear-gradient(180deg, #3A4E61 0%, #243442 100%);
+  border-color: #A9C9EE;
+  color: #FFFFFF;
+}
+
+.btn-accent {
+  background: linear-gradient(180deg, #A9C9EE 0%, #7CA7DB 100%);
+  color: #0F172A;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+.btn-accent:hover {
+  background: linear-gradient(180deg, #BDD8F7 0%, #90B6E6 100%);
+  box-shadow: 0 0 15px rgba(169, 201, 238, 0.35);
+}

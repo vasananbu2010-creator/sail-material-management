@@ -1,0 +1,62 @@
+﻿# Environment variables and secrets
+.env
+.env.local
+.env.production
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Node & Frontend artifacts
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Databases and uploaded files
+*.db
+sail_procurement.db
+backend/sail_procurement.db
+uploads/*
+!uploads/.gitkeep
+exports/*
+!exports/.gitkeep
+temp/*
+
+# Temporary test documents
+*.docx
+!SAIL_Salem_Enquiry_Proposal_Note_SMS_25_002.docx
+
+# IDE & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
