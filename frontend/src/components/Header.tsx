@@ -16,16 +16,13 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, onTabChange }) => {
             onClick={() => onTabChange('home')}
             className="flex items-center space-x-3.5 cursor-pointer group select-none"
           >
-            {/* Custom SVG Official Style SAIL Emblem */}
-            <div className="w-12 h-12 rounded-lg bg-[#24313C] border border-[#435568] flex items-center justify-center p-2 shadow-inner group-hover:border-[#A9C9EE] transition-colors">
-              <svg viewBox="0 0 100 100" className="w-full h-full" fill="none">
-                <circle cx="50" cy="50" r="44" stroke="#A9C9EE" strokeWidth="6" strokeDasharray="2 1"/>
-                <circle cx="50" cy="50" r="36" fill="#101B24" stroke="#435568" strokeWidth="2"/>
-                {/* Steel Ingot / Plant Geometric Symbol */}
-                <polygon points="50,22 75,68 25,68" fill="#A9C9EE" opacity="0.9"/>
-                <polygon points="50,38 65,68 35,68" fill="#16232D"/>
-                <circle cx="50" cy="54" r="5" fill="#A9C9EE"/>
-              </svg>
+            {/* Official SAIL Emblem */}
+            <div className="w-12 h-12 rounded-lg bg-white border border-[#435568] flex items-center justify-center p-1.5 shadow-inner group-hover:border-[#A9C9EE] transition-colors">
+              <img
+                src="/sail-logo.png"
+                alt="Steel Authority of India Limited Official Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
             
             <div className="flex flex-col">

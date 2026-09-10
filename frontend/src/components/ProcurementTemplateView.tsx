@@ -34,9 +34,15 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
     (procInfo?.purchase_requirement || "").toLowerCase().includes("proprietary") ||
     (primaryMat?.remarks || "").toLowerCase().includes("proprietary");
 
-  const initiatorName = isProprietary ? "C Satyanarayanan" : "Er. Rajesh Kumar / SMS Operations";
-  const initiatorPNo = isProprietary ? "1001390" : "78294";
-  const initiatorDesig = isProprietary ? "DGM (SMS-Electrical)" : "Senior Manager (SMS & Materials)";
+  const initiatorName = docInfo?.initiator_name && docInfo.initiator_name !== "Not Available"
+    ? docInfo.initiator_name
+    : (isProprietary ? "C Satyanarayanan" : "THANIYARASU M N");
+  const initiatorPNo = docInfo?.initiator_pno && docInfo.initiator_pno !== "Not Available"
+    ? docInfo.initiator_pno
+    : (isProprietary ? "1001390" : "0001022");
+  const initiatorDesig = docInfo?.initiator_designation && docInfo.initiator_designation !== "Not Available"
+    ? docInfo.initiator_designation
+    : (isProprietary ? "DGM (SMS-Electrical)" : "GM (SMS-OPN)");
 
   const department = rawDept && (rawDept.length > 40 || rawDept.includes("Cost Centre") || rawDept.includes("Special Relevant"))
     ? (isProprietary ? "SMS - Electrical (Salem Steel Plant)" : "SMS Operation (Salem Steel Plant)")
@@ -47,7 +53,9 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
     ? (isProprietary ? "SMSE/27/04" : "PCP-24 / SMS-01")
     : (rawRef || (isProprietary ? "SMSE/27/04" : "PCP-24 / SMS-01"));
 
-  const dateVal = docInfo?.document_date || (isProprietary ? "08-07-2026" : "15/04/2025");
+  const dateVal = docInfo?.document_date && docInfo.document_date !== "Not Available"
+    ? docInfo.document_date
+    : (isProprietary ? "08-07-2026" : "11/04/2025");
   const matName = rawMatName || (isProprietary ? "SMS COAX VALVE ACTUATOR FOR AOD" : "MS Scrap- Shredded");
   const qtyStr = `${primaryMat?.quantity || (isProprietary ? '3' : '31,000')} ${primaryMat?.unit || (isProprietary ? 'NOS' : 'MT')}`;
   const vendor = procInfo?.vendor || (isProprietary ? "M/s Omkar Supranational Pvt. Ltd., Pune" : "Open Tender Empanelled Parties");
@@ -56,7 +64,9 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
     ? `Proposal for procurement of ${qtyStr} of "${matName}" on Proprietary basis from ${vendor}.`
     : `Proposal for procurement of ${qtyStr} of "${matName}" on Open Tender basis with price discovery on monthly basis.`;
 
-  const estVal = commInfo?.estimated_cost || (isProprietary ? "Rs. 9,50,490/-" : "Rs.1,32,27,32,800/-");
+  const estVal = commInfo?.estimated_cost && commInfo.estimated_cost !== "Not Available"
+    ? commInfo.estimated_cost
+    : (isProprietary ? "Rs. 9,50,490/-" : "Rs. 1,32,27,32,800/-");
   const unitPrice = commInfo?.unit_price || (isProprietary ? "Rs. 3,16,830/- per unit" : "Rs.36,160/- PMT (excluding GST)");
   const tolerance = techInfo?.tolerance || (isProprietary ? "Nil (Proprietary Item)" : "up to +/- 25%");
 
@@ -283,13 +293,12 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
               <div className="grid grid-cols-12 divide-x divide-slate-700">
                 {/* Logo & Code */}
                 <div className="col-span-3 p-3 flex flex-col items-center justify-center text-center space-y-1">
-                  <div className="w-10 h-10 rounded-full bg-[#101B24] flex items-center justify-center p-1.5">
-                    <svg viewBox="0 0 100 100" className="w-full h-full" fill="none">
-                      <circle cx="50" cy="50" r="44" stroke="#A9C9EE" strokeWidth="6"/>
-                      <polygon points="50,22 75,68 25,68" fill="#A9C9EE"/>
-                      <polygon points="50,38 65,68 35,68" fill="#101B24"/>
-                      <circle cx="50" cy="54" r="5" fill="#A9C9EE"/>
-                    </svg>
+                  <div className="w-12 h-12 flex items-center justify-center p-0.5">
+                    <img
+                      src="/sail-logo.png"
+                      alt="Steel Authority of India Limited Official Logo"
+                      className="w-full h-full object-contain"
+                    />
                   </div>
                   <span className="font-bold text-[11px] text-slate-800">सेल SAIL</span>
                   <span className="font-mono text-[10px] text-slate-700">{plantCode}</span>

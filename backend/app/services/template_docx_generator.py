@@ -128,16 +128,32 @@ def generate_procurement_template_docx(structured_data: Dict[str, Any], original
 
     vendor = clean_str(proc_info.get("vendor"), 45, "M/s Omkar Supranational Pvt. Ltd., Pune" if is_proprietary else "Open Tender Empanelled Parties")
 
-    if is_proprietary:
+    raw_init_name = doc_info.get("initiator_name")
+    raw_init_pno = doc_info.get("initiator_pno")
+    raw_init_desig = doc_info.get("initiator_designation")
+
+    if raw_init_name and raw_init_name not in ["Not Available", ""]:
+        initiator_name = raw_init_name
+    elif is_proprietary:
         initiator_name = "C Satyanarayanan"
-        initiator_pno = "1001390"
-        initiator_desig = "DGM (SMS-Electrical)"
-        subject_val = f"Proposal for procurement of {qty_str} of \"{mat_name}\" on Proprietary basis from {vendor}."
     else:
-        initiator_name = "Er. Rajesh Kumar / SMS Operations"
-        initiator_pno = "78294"
-        initiator_desig = "Senior Manager (SMS & Materials)"
-        subject_val = f"Proposal for procurement of {qty_str} of \"{mat_name}\" on Open Tender basis with price discovery on monthly basis."
+        initiator_name = "THANIYARASU M N"
+
+    if raw_init_pno and raw_init_pno not in ["Not Available", ""]:
+        initiator_pno = raw_init_pno
+    elif is_proprietary:
+        initiator_pno = "1001390"
+    else:
+        initiator_pno = "0001022"
+
+    if raw_init_desig and raw_init_desig not in ["Not Available", ""]:
+        initiator_desig = raw_init_desig
+    elif is_proprietary:
+        initiator_desig = "DGM (SMS-Electrical)"
+    else:
+        initiator_desig = "GM (SMS-OPN)"
+
+    subject_val = f"Proposal for procurement of {qty_str} of \"{mat_name}\" on {'Proprietary' if is_proprietary else 'Open Tender'} basis{' from ' + vendor if is_proprietary else ' with price discovery on monthly basis'}."
 
     est_val = clean_str(comm_info.get("estimated_cost"), 32, "Rs. 9,50,490/-" if is_proprietary else "Rs.1,32,27,32,800/-")
     unit_price = clean_str(comm_info.get("unit_price"), 38, "Rs. 3,16,830/- per unit" if is_proprietary else "Rs.36,160/- PMT (excluding GST)")
@@ -159,10 +175,18 @@ def generate_procurement_template_docx(structured_data: Dict[str, Any], original
         for idx, width in enumerate(col_widths):
             row.cells[idx].width = width
 
-    # Row 0: SAIL Title | Initiator | Department
+    # Row 0: SAIL Title / Logo | Initiator | Department
     c00 = hdr_table.cell(0, 0)
     set_cell_padding(c00)
-    add_p(c00, "SAIL SAIL", bold=True, font_size=9, color_rgb=(0, 40, 85))
+    import pathlib
+    logo_path = pathlib.Path(__file__).resolve().parent / "sail-logo.png"
+    if not logo_path.exists():
+        logo_path = pathlib.Path(__file__).resolve().parent.parent.parent / "static" / "sail-logo.png"
+    if logo_path.exists():
+        p_logo = c00.paragraphs[0]
+        p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_logo.add_run().add_picture(str(logo_path), width=Inches(0.48))
+    add_p(c00, "सेल SAIL", bold=True, font_size=8.5, color_rgb=(0, 40, 85))
     add_p(c00, plant_code, font_size=8)
     add_p(c00, doc_seq, font_size=8)
 

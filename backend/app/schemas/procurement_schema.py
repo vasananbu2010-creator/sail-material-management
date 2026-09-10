@@ -1,4 +1,4 @@
-﻿"""
+"""
 Pydantic Schemas for SAIL Material Management Module - Salem Steel Plant
 Fixed Output Template and API Schemas
 """
@@ -16,6 +16,9 @@ class DocumentInformation(BaseModel):
     department: str = "Not Available"
     reference_number: str = "Not Available"
     document_type: str = "Not Available"
+    initiator_name: str = "Not Available"
+    initiator_pno: str = "Not Available"
+    initiator_designation: str = "Not Available"
 
 class MaterialInformation(BaseModel):
     material_name: str = "Not Available"

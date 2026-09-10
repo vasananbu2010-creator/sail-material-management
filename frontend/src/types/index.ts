@@ -5,6 +5,9 @@ export interface DocumentInformation {
   department: string;
   reference_number: string;
   document_type: string;
+  initiator_name?: string;
+  initiator_pno?: string;
+  initiator_designation?: string;
 }
 
 export interface MaterialInformation {

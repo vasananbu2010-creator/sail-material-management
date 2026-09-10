@@ -107,16 +107,32 @@ def generate_procurement_template_pdf(structured_data: Dict[str, Any], original_
 
     vendor = clean_str(proc_info.get("vendor"), 45, "M/s Omkar Supranational Pvt. Ltd., Pune" if is_proprietary else "Open Tender Empanelled Parties")
 
-    if is_proprietary:
+    raw_init_name = doc_info.get("initiator_name")
+    raw_init_pno = doc_info.get("initiator_pno")
+    raw_init_desig = doc_info.get("initiator_designation")
+
+    if raw_init_name and raw_init_name not in ["Not Available", ""]:
+        initiator_name = raw_init_name
+    elif is_proprietary:
         initiator_name = "C Satyanarayanan"
-        initiator_pno = "1001390"
-        initiator_desig = "DGM (SMS-Electrical)"
-        subject_val = f"Proposal for procurement of {qty_str} of &quot;{mat_name}&quot; on Proprietary basis from {vendor}."
     else:
-        initiator_name = "Er. Rajesh Kumar / SMS Operations"
-        initiator_pno = "78294"
-        initiator_desig = "Senior Manager (SMS & Materials)"
-        subject_val = f"Proposal for procurement of {qty_str} of &quot;{mat_name}&quot; on Open Tender basis with price discovery on monthly basis."
+        initiator_name = "THANIYARASU M N"
+
+    if raw_init_pno and raw_init_pno not in ["Not Available", ""]:
+        initiator_pno = raw_init_pno
+    elif is_proprietary:
+        initiator_pno = "1001390"
+    else:
+        initiator_pno = "0001022"
+
+    if raw_init_desig and raw_init_desig not in ["Not Available", ""]:
+        initiator_desig = raw_init_desig
+    elif is_proprietary:
+        initiator_desig = "DGM (SMS-Electrical)"
+    else:
+        initiator_desig = "GM (SMS-OPN)"
+
+    subject_val = f"Proposal for procurement of {qty_str} of &quot;{mat_name}&quot; on {'Proprietary' if is_proprietary else 'Open Tender'} basis{' from ' + vendor if is_proprietary else ' with price discovery on monthly basis'}."
 
     if len(subject_val) > 150:
         subject_val = subject_val[:147] + "..."
@@ -133,11 +149,20 @@ def generate_procurement_template_pdf(structured_data: Dict[str, Any], original_
     story.append(Paragraph("Page 1", ParagraphStyle('TopPage', fontName='Helvetica', fontSize=7.5, alignment=0)))
     story.append(Spacer(1, 2))
 
-    # Top Header Box (Outer Border Table)
-    logo_drawing = get_sail_icon_drawing(32, 32)
+    # Top Header Box (Outer Border Table) - Official SAIL Logo Image
+    import pathlib
+    from reportlab.platypus import Image as RLImage
+    logo_path = pathlib.Path(__file__).resolve().parent / "sail-logo.png"
+    if not logo_path.exists():
+        logo_path = pathlib.Path(__file__).resolve().parent.parent.parent / "static" / "sail-logo.png"
+    if logo_path.exists():
+        logo_element = RLImage(str(logo_path), width=32, height=34)
+    else:
+        logo_element = get_sail_icon_drawing(32, 32)
+
     c1 = [
-        logo_drawing,
-        Paragraph("<b>SAIL SAIL</b>", ParagraphStyle('SailTxt', fontName='Helvetica-Bold', fontSize=7.5, leading=9.5)),
+        logo_element,
+        Paragraph("<b>सेल SAIL</b>", ParagraphStyle('SailTxt', fontName='Helvetica-Bold', fontSize=7.5, leading=9.5, alignment=1)),
         Paragraph(plant_code, hdr_val),
         Paragraph(doc_seq, hdr_val)
     ]
