@@ -100,10 +100,15 @@ class OCRService:
             from PIL import Image
             import concurrent.futures
 
+            # Limit thread contention for Tesseract on shared container CPUs
+            os.environ["OMP_THREAD_LIMIT"] = "1"
+            os.environ["OPENBLAS_NUM_THREADS"] = "1"
+            os.environ["MKL_NUM_THREADS"] = "1"
+
             def _ocr_tess(p):
                 try:
                     img = Image.open(p)
-                    txt = pytesseract.image_to_string(img).strip()
+                    txt = pytesseract.image_to_string(img, timeout=25).strip()
                     if txt:
                         lines = [l.strip() for l in txt.splitlines() if l.strip()]
                         wc = len(txt.split())
@@ -113,7 +118,7 @@ class OCRService:
                     pass
                 return {"text": "", "lines": [], "confidence": 0.0, "confidence_str": "0%", "status": "error", "engine": "Tesseract-OCR"}
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(image_paths))) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(2, len(image_paths))) as executor:
                 results = list(executor.map(_ocr_tess, image_paths))
                 if any(r["text"] for r in results):
                     return results

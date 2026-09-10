@@ -8,6 +8,7 @@ Handles:
 5. Direct Image files (PNG, JPG, JPEG)
 """
 import os
+import json
 import pathlib
 import tempfile
 from typing import Dict, Any, List, Tuple
@@ -117,29 +118,45 @@ class DocumentParser:
         # Check if scanned (very little or no digital text across all pages)
         if len(combined_text) < 40 and page_count > 0:
             is_scanned = True
-            temp_files: List[str] = []
-            try:
-                pdf_doc = pdfium.PdfDocument(pdf_path)
-                for p_idx in range(len(pdf_doc)):
-                    img = pdf_doc[p_idx].render(scale=2).to_pil()
-                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                        tmp_path = tmp.name
-                    img.save(tmp_path)
-                    temp_files.append(tmp_path)
+            cache_file = pathlib.Path(pdf_path).with_suffix(".ocr.json")
+            if cache_file.exists():
+                try:
+                    pages_text = json.loads(cache_file.read_text(encoding="utf-8"))
+                    combined_text = "\n\n".join(pages_text).strip()
+                except Exception:
+                    pass
 
-                # High performance batch OCR (single-process on Windows, threaded on Linux)
-                ocr_results = ocr_engine.run_ocr_batch(temp_files)
-                pages_text = [r.get("text", "") for r in ocr_results]
-                combined_text = "\n\n".join(pages_text).strip()
-            except Exception as ocr_err:
-                combined_text += f"\n[OCR Fallback encountered error: {str(ocr_err)}]"
-            finally:
-                for tf in temp_files:
-                    try:
-                        if os.path.exists(tf):
-                            os.remove(tf)
-                    except Exception:
-                        pass
+            if not pages_text or len(combined_text) < 40:
+                temp_files: List[str] = []
+                try:
+                    pdf_doc = pdfium.PdfDocument(pdf_path)
+                    for p_idx in range(len(pdf_doc)):
+                        img = pdf_doc[p_idx].render(scale=2).to_pil()
+                        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                            tmp_path = tmp.name
+                        img.save(tmp_path)
+                        temp_files.append(tmp_path)
+
+                    # High performance batch OCR (single-process on Windows, threaded on Linux)
+                    ocr_results = ocr_engine.run_ocr_batch(temp_files)
+                    pages_text = [r.get("text", "") for r in ocr_results]
+                    combined_text = "\n\n".join(pages_text).strip()
+
+                    # Save to persistent disk cache for immediate instant retries
+                    if combined_text:
+                        try:
+                            cache_file.write_text(json.dumps(pages_text, ensure_ascii=False), encoding="utf-8")
+                        except Exception:
+                            pass
+                except Exception as ocr_err:
+                    combined_text += f"\n[OCR Fallback encountered error: {str(ocr_err)}]"
+                finally:
+                    for tf in temp_files:
+                        try:
+                            if os.path.exists(tf):
+                                os.remove(tf)
+                        except Exception:
+                            pass
 
         return {
             "text": combined_text,

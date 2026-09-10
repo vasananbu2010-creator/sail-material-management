@@ -23,14 +23,37 @@ export const api = {
   },
 
   async processDocument(docId: string): Promise<{ document_id: string; status: string; structured_data: any }> {
-    const res = await fetch(`${API_BASE}/documents/${docId}/process`, {
-      method: 'POST',
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Processing failed' }));
-      throw new Error(err.detail || 'Failed to process document');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 85000);
+
+    try {
+      const res = await fetch(`${API_BASE}/documents/${docId}/process`, {
+        method: 'POST',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        let detail = `Server error (${res.status}): Processing failed`;
+        try {
+          const err = await res.json();
+          if (err.detail) detail = err.detail;
+        } catch {
+          if (res.status === 504) {
+            detail = 'Cloud proxy timeout (504): Multi-page document is being processed in the background. Please click "Retry Processing" to retrieve the results.';
+          }
+        }
+        throw new Error(detail);
+      }
+      return res.json();
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        throw new Error(
+          'Processing timeout: The multi-page document is taking longer to scan on the server. Please click "Retry Processing" to fetch results.'
+        );
+      }
+      throw err;
     }
-    return res.json();
   },
 
   async getDocument(docId: string): Promise<DocumentDetail> {

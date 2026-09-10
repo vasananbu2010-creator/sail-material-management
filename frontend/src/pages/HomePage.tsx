@@ -22,7 +22,8 @@ import {
   Clock,
   Layers,
   FileSpreadsheet,
-  FileSignature
+  FileSignature,
+  AlertTriangle
 } from 'lucide-react';
 
 interface HomePageProps {
@@ -38,35 +39,44 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
   const [ocrText, setOcrText] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'template' | 'structured' | 'table' | 'ocr' | 'preview'>('template');
   const [error, setError] = useState<string | null>(null);
+  const [lastDocId, setLastDocId] = useState<string | null>(null);
 
   const simulateProcessingSteps = async (docId: string, filename: string) => {
     setIsProcessing(true);
     setProcessingFileName(filename);
+    setLastDocId(docId);
+    setError(null);
     setCurrentStep(1);
 
     try {
-      // Initiate real backend analysis immediately in parallel
+      // Step 2: Extracting PDF Text...
+      setCurrentStep(2);
       const processPromise = api.processDocument(docId);
 
-      // Smoothly advance progress steps without artificial stalls
-      setCurrentStep(2); // Extracting PDF Text...
-      await Promise.race([processPromise, new Promise((r) => setTimeout(r, 400))]);
+      // Advance to Step 3 (OCR Processing...) after quick initial text check
+      await Promise.race([
+        processPromise,
+        new Promise((r) => setTimeout(r, 1200))
+      ]);
 
-      setCurrentStep(3); // OCR Processing...
-      await Promise.race([processPromise, new Promise((r) => setTimeout(r, 600))]);
+      // Step 3: OCR Processing... (Holds here while the backend performs multi-page OCR)
+      setCurrentStep(3);
 
-      setCurrentStep(4); // Analyzing Document...
-      await Promise.race([processPromise, new Promise((r) => setTimeout(r, 500))]);
-
-      setCurrentStep(5); // Extracting Materials...
-      await Promise.race([processPromise, new Promise((r) => setTimeout(r, 400))]);
-
-      setCurrentStep(6); // Creating Structured Output...
       // Await real backend completion
       await processPromise;
 
+      // When backend completes, rapidly advance through remaining semantic & schema stages
+      setCurrentStep(4); // Analyzing Document...
+      await new Promise((r) => setTimeout(r, 200));
+
+      setCurrentStep(5); // Extracting Materials...
+      await new Promise((r) => setTimeout(r, 200));
+
+      setCurrentStep(6); // Creating Structured Output...
+      await new Promise((r) => setTimeout(r, 200));
+
       setCurrentStep(7); // Completed
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 250));
 
       // Fetch complete details & OCR text
       const docDetails = await api.getDocument(docId);
@@ -74,8 +84,10 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
 
       setActiveDocument(docDetails);
       setOcrText(ocrRes.raw_ocr_text);
+      setError(null);
       onRefreshDashboard();
     } catch (err: any) {
+      console.error('Processing error:', err);
       setError(err.message || 'Failed to process document.');
     } finally {
       setIsProcessing(false);
@@ -123,12 +135,52 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
     setActiveDocument(null);
     setOcrText('');
     setError(null);
+    setLastDocId(null);
     setCurrentStep(1);
     setActiveTab('structured');
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Error / Retry Alert Banner (Section 28) */}
+      {error && !isProcessing && (
+        <div className="glass-card rounded-2xl p-6 border border-red-500/50 bg-red-950/30 shadow-2xl space-y-4 animate-fadeIn">
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-red-900/40 border border-red-500/40 text-red-400 shrink-0">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div className="space-y-1.5 flex-1">
+              <h4 className="text-base font-bold text-red-200">
+                Document Processing Notice
+              </h4>
+              <p className="text-sm text-[#B8C4D0] leading-relaxed">
+                {error}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-red-900/40">
+            {lastDocId && (
+              <button
+                onClick={() => simulateProcessingSteps(lastDocId, processingFileName)}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-[#7CA7DB] text-[#0E1720] hover:bg-[#A9C9EE] transition-all cursor-pointer flex items-center gap-1.5 shadow-md"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Retry Processing</span>
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setError(null);
+                setLastDocId(null);
+              }}
+              className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#16232D] text-[#B8C4D0] hover:text-[#F0F4F8] border border-[#435568] transition-all cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* If No Document is Active: Show Hero & Upload Area */}
       {!activeDocument && !isProcessing && (
         <div className="space-y-8">

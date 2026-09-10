@@ -4,7 +4,7 @@ FastAPI Application Entrypoint
 """
 import os
 import pathlib
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -54,6 +54,39 @@ def health_check():
         "ai_analysis": "Online",
         "database": "Online"
     }
+
+@app.post("/api/analyze")
+async def legacy_analyze(file: UploadFile = File(...)):
+    """Legacy compatibility endpoint for direct analysis."""
+    import tempfile
+    ext = pathlib.Path(file.filename or "").suffix.lower() or ".pdf"
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+    try:
+        from app.services.ai_analyzer import ai_analyzer
+        res = ai_analyzer.analyze_document(tmp_path, file.filename or "uploaded.pdf")
+        return res["structured_data"].model_dump()
+    finally:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+
+@app.post("/api/load-sample")
+def legacy_load_sample():
+    """Legacy compatibility endpoint for loading sample proposal."""
+    from app.services.ai_analyzer import ai_analyzer
+    from app.services.template_mapper import template_mapper
+    demo_path = pathlib.Path(__file__).resolve().parent / "sample_docs" / "sample_indent.pdf"
+    if not demo_path.exists():
+        demo_path = pathlib.Path(__file__).resolve().parent.parent / "sample_docs" / "sample_indent.pdf"
+    if demo_path.exists():
+        res = ai_analyzer.analyze_document(str(demo_path), "sample_indent.pdf")
+        return res["structured_data"].model_dump()
+    return {}
 
 # Check if built frontend exists
 FRONTEND_DIST_OPTIONS = [
