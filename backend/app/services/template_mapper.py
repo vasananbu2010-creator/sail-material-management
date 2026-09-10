@@ -277,7 +277,7 @@ class TemplateMapper:
             po_no = "H67204"
 
         # Vendor / Supplier
-        if materials and materials[0].get("vendor") != "Not Available":
+        if materials and materials[0].get("vendor") and materials[0].get("vendor") != "Not Available":
             vendor = materials[0].get("vendor")
             supplier = vendor
         elif "omkar supra" in tl:

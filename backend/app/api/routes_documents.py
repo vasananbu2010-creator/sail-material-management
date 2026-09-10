@@ -108,10 +108,20 @@ def list_documents(db: Session = Depends(get_db)):
     return results
 
 @router.post("/{doc_id}/process")
-def process_document(doc_id: str, db: Session = Depends(get_db)):
+def process_document(doc_id: str, force: bool = False, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    # If already processed and not forced, return cached structured output instantly
+    if not force and doc.status == "COMPLETED" and doc.structured_json:
+        return {
+            "document_id": doc.id,
+            "status": doc.status,
+            "structured_data": doc.structured_json,
+            "materials_count": len(doc.structured_json.get("materials", [])),
+            "cached": True
+        }
 
     if not pathlib.Path(doc.stored_path).exists():
         raise HTTPException(status_code=404, detail="Stored document file not found on disk")

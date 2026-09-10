@@ -45,22 +45,28 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
     setCurrentStep(1);
 
     try {
-      // Stepped progress animation
-      await new Promise((r) => setTimeout(r, 600));
-      setCurrentStep(2); // Extracting PDF Text...
-      await new Promise((r) => setTimeout(r, 800));
-      setCurrentStep(3); // OCR Processing...
-      await new Promise((r) => setTimeout(r, 900));
-      setCurrentStep(4); // Analyzing Document...
-      await new Promise((r) => setTimeout(r, 800));
-      setCurrentStep(5); // Extracting Materials...
-      await new Promise((r) => setTimeout(r, 700));
-      setCurrentStep(6); // Creating Structured Output...
+      // Initiate real backend analysis immediately in parallel
+      const processPromise = api.processDocument(docId);
 
-      // Run real backend analysis
-      const processRes = await api.processDocument(docId);
+      // Smoothly advance progress steps without artificial stalls
+      setCurrentStep(2); // Extracting PDF Text...
+      await Promise.race([processPromise, new Promise((r) => setTimeout(r, 400))]);
+
+      setCurrentStep(3); // OCR Processing...
+      await Promise.race([processPromise, new Promise((r) => setTimeout(r, 600))]);
+
+      setCurrentStep(4); // Analyzing Document...
+      await Promise.race([processPromise, new Promise((r) => setTimeout(r, 500))]);
+
+      setCurrentStep(5); // Extracting Materials...
+      await Promise.race([processPromise, new Promise((r) => setTimeout(r, 400))]);
+
+      setCurrentStep(6); // Creating Structured Output...
+      // Await real backend completion
+      await processPromise;
+
       setCurrentStep(7); // Completed
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 400));
 
       // Fetch complete details & OCR text
       const docDetails = await api.getDocument(docId);

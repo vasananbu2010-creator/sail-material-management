@@ -1,4 +1,4 @@
-﻿"""
+"""
 Document Parser for SAIL Material Management Module
 Handles:
 1. Multi-page PDFs (vector text & table extraction via pdfplumber + pypdf)
@@ -21,22 +21,42 @@ from app.services.ocr_service import ocr_engine
 
 class DocumentParser:
     def __init__(self):
-        pass
+        self._cache: Dict[str, Dict[str, Any]] = {}
 
     def parse_file(self, file_path: str, original_filename: str) -> Dict[str, Any]:
         p = pathlib.Path(file_path).resolve()
+        if not p.exists():
+            return {
+                "text": "",
+                "pages": [],
+                "page_count": 0,
+                "tables": [],
+                "is_scanned": False,
+                "status": "error",
+                "error": "File not found"
+            }
+
+        # Fast cache lookup using path, size, and modified time
+        try:
+            stat = p.stat()
+            cache_key = f"{p}_{stat.st_size}_{stat.st_mtime}"
+            if cache_key in self._cache:
+                return dict(self._cache[cache_key])
+        except Exception:
+            cache_key = None
+
         ext = p.suffix.lower()
 
         if ext == ".pdf":
-            return self._parse_pdf(str(p), original_filename)
+            res = self._parse_pdf(str(p), original_filename)
         elif ext in [".docx", ".doc"]:
-            return self._parse_docx(str(p), original_filename)
+            res = self._parse_docx(str(p), original_filename)
         elif ext in [".xlsx", ".xls"]:
-            return self._parse_xlsx(str(p), original_filename)
+            res = self._parse_xlsx(str(p), original_filename)
         elif ext in [".png", ".jpg", ".jpeg"]:
-            return self._parse_image(str(p), original_filename)
+            res = self._parse_image(str(p), original_filename)
         else:
-            return {
+            res = {
                 "text": "",
                 "pages": [],
                 "page_count": 0,
@@ -45,6 +65,11 @@ class DocumentParser:
                 "status": "unsupported_format",
                 "error": f"Unsupported extension: {ext}"
             }
+
+        if cache_key and res.get("status") == "success":
+            self._cache[cache_key] = res
+
+        return res
 
     def _parse_pdf(self, pdf_path: str, original_filename: str) -> Dict[str, Any]:
         """Multi-page PDF extraction with scanned PDF detection and OCR fallback."""
@@ -92,28 +117,29 @@ class DocumentParser:
         # Check if scanned (very little or no digital text across all pages)
         if len(combined_text) < 40 and page_count > 0:
             is_scanned = True
-            ocr_pages: List[str] = []
+            temp_files: List[str] = []
             try:
                 pdf_doc = pdfium.PdfDocument(pdf_path)
                 for p_idx in range(len(pdf_doc)):
-                    # Render page to temporary PNG
                     img = pdf_doc[p_idx].render(scale=2).to_pil()
                     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                         tmp_path = tmp.name
                     img.save(tmp_path)
-                    
-                    ocr_res = ocr_engine.run_ocr_on_image(tmp_path)
-                    try:
-                        os.remove(tmp_path)
-                    except Exception:
-                        pass
-                    
-                    ocr_pages.append(ocr_res.get("text", ""))
-                
-                pages_text = ocr_pages
+                    temp_files.append(tmp_path)
+
+                # High performance batch OCR (single-process on Windows, threaded on Linux)
+                ocr_results = ocr_engine.run_ocr_batch(temp_files)
+                pages_text = [r.get("text", "") for r in ocr_results]
                 combined_text = "\n\n".join(pages_text).strip()
             except Exception as ocr_err:
                 combined_text += f"\n[OCR Fallback encountered error: {str(ocr_err)}]"
+            finally:
+                for tf in temp_files:
+                    try:
+                        if os.path.exists(tf):
+                            os.remove(tf)
+                    except Exception:
+                        pass
 
         return {
             "text": combined_text,
