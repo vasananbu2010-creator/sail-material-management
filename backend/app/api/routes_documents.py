@@ -16,7 +16,8 @@ import uuid
 import threading
 import time
 import traceback
-from typing import Dict, Any, Optional
+import zipfile
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, BackgroundTasks
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
@@ -34,11 +35,7 @@ router = APIRouter(prefix="/api/documents", tags=["Documents"])
 UPLOADS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent.parent / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-@router.post("/upload")
-async def upload_document(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db)
-):
+async def _save_uploaded_file(file: UploadFile, batch_id: Optional[str], db: Session) -> Dict[str, Any]:
     original_name = file.filename or "uploaded_document.pdf"
     clean_name = sanitize_filename(original_name)
 
@@ -48,7 +45,7 @@ async def upload_document(
 
     is_valid, err_msg, mime_type = validate_uploaded_file(original_name, file_size)
     if not is_valid:
-        raise HTTPException(status_code=400, detail=err_msg)
+        raise HTTPException(status_code=400, detail=f"File '{original_name}': {err_msg}")
 
     doc_id = str(uuid.uuid4())
     stored_path = UPLOADS_DIR / f"{doc_id}_{clean_name}"
@@ -60,6 +57,7 @@ async def upload_document(
 
     doc = Document(
         id=doc_id,
+        batch_id=batch_id,
         original_name=original_name,
         stored_path=str(stored_path),
         file_type=ext,
@@ -80,11 +78,69 @@ async def upload_document(
     db.refresh(doc)
 
     return {
-        "message": "File uploaded successfully",
         "document_id": doc.id,
         "filename": doc.original_name,
         "file_size": format_file_size(doc.file_size_bytes),
-        "status": doc.status
+        "file_size_bytes": doc.file_size_bytes,
+        "status": doc.status,
+        "batch_id": batch_id
+    }
+
+@router.post("/upload")
+async def upload_document(
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
+    db: Session = Depends(get_db)
+):
+    upload_list = []
+    if files:
+        upload_list.extend(files)
+    if file:
+        upload_list.append(file)
+
+    if not upload_list:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    batch_id = str(uuid.uuid4()) if len(upload_list) > 1 else None
+    results = []
+    for f in upload_list:
+        res = await _save_uploaded_file(f, batch_id, db)
+        results.append(res)
+
+    if len(results) == 1 and not files:
+        r = results[0]
+        return {
+            "message": "File uploaded successfully",
+            "document_id": r["document_id"],
+            "filename": r["filename"],
+            "file_size": r["file_size"],
+            "status": r["status"]
+        }
+
+    return {
+        "message": f"{len(results)} files uploaded successfully",
+        "batch_id": batch_id,
+        "documents": results
+    }
+
+@router.post("/upload-batch")
+async def upload_documents_batch(
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided in batch upload")
+
+    batch_id = str(uuid.uuid4())
+    results = []
+    for f in files:
+        res = await _save_uploaded_file(f, batch_id, db)
+        results.append(res)
+
+    return {
+        "message": f"{len(results)} files uploaded successfully in batch",
+        "batch_id": batch_id,
+        "documents": results
     }
 
 @router.get("")
@@ -394,6 +450,60 @@ def process_document(doc_id: str, background_tasks: BackgroundTasks, force: bool
         "progress_percent": 10
     }
 
+@router.post("/batch-process")
+def batch_process_documents(
+    payload: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    doc_ids = payload.get("document_ids", [])
+    if not doc_ids:
+        raise HTTPException(status_code=400, detail="No document IDs provided for batch processing")
+
+    results = []
+    for d_id in doc_ids:
+        doc = db.query(Document).filter(Document.id == d_id).first()
+        if not doc:
+            results.append({"document_id": d_id, "status": "NOT_FOUND", "message": "Document not found"})
+            continue
+
+        if doc.status == "COMPLETED" and doc.structured_json:
+            results.append({"document_id": doc.id, "status": "COMPLETED", "message": "Already processed", "cached": True})
+            continue
+
+        if not pathlib.Path(doc.stored_path).exists():
+            doc.status = "FAILED"
+            doc.error_message = "Stored file not found on disk"
+            db.commit()
+            results.append({"document_id": doc.id, "status": "FAILED", "message": "File not found on disk"})
+            continue
+
+        doc.status = "PROCESSING"
+        doc.error_message = None
+        doc.current_step = 2
+        doc.step_label = "Extracting PDF Text..."
+        doc.step_detail = "Starting background OCR and analysis pipeline..."
+        doc.progress_percent = 10
+        db.commit()
+
+        PROCESSING_STATUS[d_id] = {
+            "document_id": doc.id,
+            "status": "PROCESSING",
+            "current_step": 2,
+            "step_label": "Extracting PDF Text...",
+            "step_detail": "Starting background OCR and analysis pipeline...",
+            "progress_percent": 10,
+            "error": None
+        }
+
+        background_tasks.add_task(_execute_document_processing, d_id)
+        results.append({"document_id": doc.id, "status": "PROCESSING", "message": "Processing started in background"})
+
+    return {
+        "message": f"Batch processing initiated for {len(results)} documents",
+        "results": results
+    }
+
 @router.get("/{doc_id}")
 def get_document(doc_id: str, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -539,8 +649,49 @@ def export_document_json(doc_id: str, db: Session = Depends(get_db)):
         headers={"Content-Disposition": f"attachment; filename={export_filename}"}
     )
 
+@router.get("/batch-export")
+def batch_export_documents(doc_ids: str, db: Session = Depends(get_db)):
+    """Exports a ZIP archive containing PDF, DOCX, and Excel files for all specified document IDs."""
+    ids = [d.strip() for d in doc_ids.split(",") if d.strip()]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No document IDs specified for batch export")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for d_id in ids:
+            doc = db.query(Document).filter(Document.id == d_id).first()
+            if not doc or not doc.structured_json:
+                continue
+
+            stem = pathlib.Path(doc.original_name).stem.replace(" ", "_")
+            # PDF
+            try:
+                pdf_st = export_service.export_pdf(doc.structured_json, doc.original_name)
+                zip_file.writestr(f"{stem}/SAIL_Procurement_Template_{stem}.pdf", pdf_st.getvalue())
+            except Exception:
+                pass
+            # DOCX
+            try:
+                docx_st = export_service.export_docx(doc.structured_json, doc.original_name)
+                zip_file.writestr(f"{stem}/SAIL_Procurement_Template_{stem}.docx", docx_st.getvalue())
+            except Exception:
+                pass
+            # Excel
+            try:
+                xl_st = export_service.export_excel(doc.structured_json, doc.original_name)
+                zip_file.writestr(f"{stem}/SAIL_Material_Report_{stem}.xlsx", xl_st.getvalue())
+            except Exception:
+                pass
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=SAIL_Batch_Procurement_Export.zip"}
+    )
+
 @router.post("/demo/{demo_id}")
-def load_demo_document(demo_id: str, db: Session = Depends(get_db)):
+def load_demo_document(demo_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Loads realistic demo documents for immediate testing (e.g. Salem Proposal Note)."""
     # Check if Salem reference PDF exists in Downloads
     salem_pdf_path = pathlib.Path(r"C:\Users\HARISH\Downloads\procurement_template_format_updated (2) (1).pdf")
@@ -569,4 +720,4 @@ def load_demo_document(demo_id: str, db: Session = Depends(get_db)):
     db.commit()
 
     # Automatically process the demo document
-    return process_document(doc.id, db)
+    return process_document(doc.id, background_tasks=background_tasks, db=db)

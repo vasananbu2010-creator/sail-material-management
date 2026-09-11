@@ -36,13 +36,13 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
 
   const initiatorName = docInfo?.initiator_name && docInfo.initiator_name !== "Not Available"
     ? docInfo.initiator_name
-    : (isProprietary ? "C Satyanarayanan" : "THANIYARASU M N");
+    : (docInfo?.initiator_name || "Not available in source document");
   const initiatorPNo = docInfo?.initiator_pno && docInfo.initiator_pno !== "Not Available"
     ? docInfo.initiator_pno
-    : (isProprietary ? "1001390" : "0001022");
+    : (docInfo?.initiator_pno || "Not available in source document");
   const initiatorDesig = docInfo?.initiator_designation && docInfo.initiator_designation !== "Not Available"
     ? docInfo.initiator_designation
-    : (isProprietary ? "DGM (SMS-Electrical)" : "GM (SMS-OPN)");
+    : (docInfo?.initiator_designation || "Not available in source document");
 
   const department = rawDept && (rawDept.length > 40 || rawDept.includes("Cost Centre") || rawDept.includes("Special Relevant"))
     ? (isProprietary ? "SMS - Electrical (Salem Steel Plant)" : "SMS Operation (Salem Steel Plant)")
@@ -74,57 +74,62 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
   const pdfUrl = api.getTemplatePdfUrl(documentId);
   const docxUrl = api.getTemplateDocxUrl(documentId);
 
-  const bgRows = isProprietary
-    ? [
-        ["i) Indenter", department],
-        ["ii) Indent ref no & date", `${reference} dt: ${dateVal}`],
-        ["iii) Description of the item", matName],
-        ["iv) Quantity / Tolerance", `${qtyStr} (Tolerance: ${tolerance})`],
-        ["v) Estimated Cost", estVal],
-        ["vi) Delivery Period", "Immediate / As per purchase order terms"],
-        ["vii) EMD", "Exempted as per Proprietary Purchase Guidelines"],
-        ["viii) Distribution of order", "Placement of order on Single OEM Dealer"],
-        ["ix) Security Deposit", "3% of total order value"],
-        ["x) Price Discovery", "Direct Negotiation / Fixed OEM Rate"],
-        ["xi) Quantity for procurement", qtyStr],
-        ["xii) Mode of Tender", `Proprietary Basis from OEM Dealer (${vendor})`],
-        ["xiii) Approving Authority", "Competent Approving Authority / ED (Works)"],
-      ]
-    : [
-        ["i) Indenter", department],
-        ["ii) Indent ref no & date", `${reference} dt: ${dateVal}`],
-        ["iii) Description of the item", matName],
-        ["iv) Quantity / Tolerance", `${qtyStr} (Tolerance: ${tolerance})`],
-        ["v) Estimated Cost", estVal],
-        ["vi) Delivery Period", "Monthly Delivery as per Price Discovery schedule"],
-        ["vii) EMD", "Rs.10,00,000/- (MSEs/PSUs/Start-ups exempted per Govt policy)"],
-        ["viii) Distribution of order", "Placement of order on three parties"],
-        ["ix) Security Deposit", "3% of total order value"],
-        ["x) Price Discovery", "Monthly basis through EPS"],
-        ["xi) Quantity for each Price Discovery", "4,000 MT"],
-        ["xii) Mode of Tender", "Open Tender (Two Stage) through EPS"],
-        ["xiii) Approving Authority", "Competent Approving Authority / ED (Works)"],
-      ];
+  const bgRows: Array<[string, string]> = data?.background_points && data.background_points.length > 0
+    ? data.background_points.map(bp => [bp.label, bp.value])
+    : (isProprietary
+      ? [
+          ["i) Indenter", department],
+          ["ii) Indent ref no & date", `${reference} dt: ${dateVal}`],
+          ["iii) Description of the item", matName],
+          ["iv) Quantity / Tolerance", `${qtyStr} (Tolerance: ${tolerance})`],
+          ["v) Estimated Cost", estVal],
+          ["vi) Delivery Period", "Immediate / As per purchase order terms"],
+          ["vii) EMD", "Exempted as per Proprietary Purchase Guidelines"],
+          ["viii) Distribution of order", "Placement of order on Single OEM Dealer"],
+          ["ix) Security Deposit", "3% of total order value"],
+          ["x) Price Discovery", "Direct Negotiation / Fixed OEM Rate"],
+          ["xi) Quantity for procurement", qtyStr],
+          ["xii) Mode of Tender", `Proprietary Basis from OEM Dealer (${vendor})`],
+          ["xiii) Approving Authority", "Competent Approving Authority / ED (Works)"],
+        ]
+      : [
+          ["i) Indenter", department],
+          ["ii) Indent ref no & date", `${reference} dt: ${dateVal}`],
+          ["iii) Description of the item", matName],
+          ["iv) Quantity / Tolerance", `${qtyStr} (Tolerance: ${tolerance})`],
+          ["v) Estimated Cost", estVal],
+          ["vi) Delivery Period", "Monthly Delivery as per Price Discovery schedule"],
+          ["vii) EMD", "Rs.10,00,000/- (MSEs/PSUs/Start-ups exempted per Govt policy)"],
+          ["viii) Distribution of order", "Placement of order on three parties"],
+          ["ix) Security Deposit", "3% of total order value"],
+          ["x) Price Discovery", "Monthly basis through EPS"],
+          ["xi) Quantity for each Price Discovery", "4,000 MT"],
+          ["xii) Mode of Tender", "Open Tender (Two Stage) through EPS"],
+          ["xiii) Approving Authority", "Competent Approving Authority / ED (Works)"],
+        ]);
 
-  const proposalParagraphs = isProprietary
-    ? [
-        `1. Based on the technical screening and indenter justification, the above referred indent (Annexure I) was received from ${department} for procurement of ${qtyStr} (Quantity Tolerance: ${tolerance}) of "${matName}" on Proprietary basis at an estimated value of ${estVal} (Annexure II).`,
-        `2. The item is proprietary in nature, custom-manufactured by OEM M/s COAX Germany for AOD Converter tuyere inert gas flow regulation. No other make is acceptable due to existing mechanical and electrical compatibility.`,
-        `3. The stock at site and pending supplies as on ${dateVal} have been verified and documented under Annexure-IV.`,
-        `4. The single tender enquiry is proposed to be placed on ${vendor}, authorized dealer of OEM M/s COAX Germany, with justification and proprietary certificate enclosed.`,
-        `5. As per extant procurement policy for proprietary spares, de-proprietization efforts were examined; however, no other source can match existing specifications without extensive plant modification.`,
-        `6. As per the extant guidelines of Government of India (GOI), purchase preference and statutory terms apply as per Public Procurement Policy.`,
-        `7. In view of the above, the following are proposed:`
-      ]
-    : [
-        `1. Based on the Task Force Committee (TFC) recommendation, the above referred indent (Annexure I) was received from SMS Operation for procurement of ${qtyStr} (Quantity Tolerance: ${tolerance}) of "${matName}" on Open Tender basis at an estimated value of ${estVal} (Annexure II) with price discovery on monthly basis with placement of order on three parties.`,
-        `2. The estimate is based on LPP at ${unitPrice} vide PO dated: 24/03/2025 enclosed as Annexure III. The last three years actual consumption enclosed as Annexure-IV is tabulated below`,
-        `3. The stock at site and pending supplies as on 11/04/2025 enclosed as Annexure-IV are tabulated below`,
-        `4. SMS Operation vide email dated:15/04/2025 (copy enclosed) recommended to conduct price discovery for 4000 MT towards first phase of price discovery through EPS. Since, the price discovery is on monthly basis for 4000 MT, the eligibility criteria & EMD are fixed based on the monthly price discovery quantity of 4,000 MT.`,
-        `5. As per the clause no.8.1 of PCP-24, EMD shall be taken in all procurement cases of Open Tenders with indent value Rs.2 Crores & above. Accordingly, applicable EMD amount of Rs.10,00,000/- will be taken from the participating bidders. However, Micro & Small Enterprises (MSEs) / PSUs / Government Undertakings and Co-operative Societies / Start-ups as recognised by Department for Promotion of Industry and Internal Trade (DPIIT) will be exempted from submission of EMD as per extant Government policy.`,
-        `6. As per the extant guidelines of Government of India (GOI), purchase preference is applicable for MSE's as per PPP MSE's (Public Procurement Policy for MSE's) and for the Class I local suppliers as per PPP-MII policy (Public Procurement Policy - Make In India).`,
-        `7. In view of the above, the following are proposed:`
-      ];
+  const hasDynamicProps = data?.proposal_details && data.proposal_details.length > 0;
+  const proposalParagraphs = hasDynamicProps
+    ? data.proposal_details!
+    : (isProprietary
+      ? [
+          `1. Based on the technical screening and indenter justification, the above referred indent (Annexure I) was received from ${department} for procurement of ${qtyStr} (Quantity Tolerance: ${tolerance}) of "${matName}" on Proprietary basis at an estimated value of ${estVal} (Annexure II).`,
+          `2. The item is proprietary in nature, custom-manufactured by OEM M/s COAX Germany for AOD Converter tuyere inert gas flow regulation. No other make is acceptable due to existing mechanical and electrical compatibility.`,
+          `3. The stock at site and pending supplies as on ${dateVal} have been verified and documented under Annexure-IV.`,
+          `4. The single tender enquiry is proposed to be placed on ${vendor}, authorized dealer of OEM M/s COAX Germany, with justification and proprietary certificate enclosed.`,
+          `5. As per extant procurement policy for proprietary spares, de-proprietization efforts were examined; however, no other source can match existing specifications without extensive plant modification.`,
+          `6. As per the extant guidelines of Government of India (GOI), purchase preference and statutory terms apply as per Public Procurement Policy.`,
+          `7. In view of the above, the following are proposed:`
+        ]
+      : [
+          `1. Based on the Task Force Committee (TFC) recommendation, the above referred indent (Annexure I) was received from SMS Operation for procurement of ${qtyStr} (Quantity Tolerance: ${tolerance}) of "${matName}" on Open Tender basis at an estimated value of ${estVal} (Annexure II) with price discovery on monthly basis with placement of order on three parties.`,
+          `2. The estimate is based on LPP at ${unitPrice} vide PO dated: 24/03/2025 enclosed as Annexure III. The last three years actual consumption enclosed as Annexure-IV is tabulated below`,
+          `3. The stock at site and pending supplies as on 11/04/2025 enclosed as Annexure-IV are tabulated below`,
+          `4. SMS Operation vide email dated:15/04/2025 (copy enclosed) recommended to conduct price discovery for 4000 MT towards first phase of price discovery through EPS. Since, the price discovery is on monthly basis for 4000 MT, the eligibility criteria & EMD are fixed based on the monthly price discovery quantity of 4,000 MT.`,
+          `5. As per the clause no.8.1 of PCP-24, EMD shall be taken in all procurement cases of Open Tenders with indent value Rs.2 Crores & above. Accordingly, applicable EMD amount of Rs.10,00,000/- will be taken from the participating bidders. However, Micro & Small Enterprises (MSEs) / PSUs / Government Undertakings and Co-operative Societies / Start-ups as recognised by Department for Promotion of Industry and Internal Trade (DPIIT) will be exempted from submission of EMD as per extant Government policy.`,
+          `6. As per the extant guidelines of Government of India (GOI), purchase preference is applicable for MSE's as per PPP MSE's (Public Procurement Policy for MSE's) and for the Class I local suppliers as per PPP-MII policy (Public Procurement Policy - Make In India).`,
+          `7. In view of the above, the following are proposed:`
+        ]);
 
   const clauses = isProprietary
     ? [
@@ -171,33 +176,58 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
     ? ["0 Nos (Nil Stock)", "0 Nos (Nil Pending)", "0 Nos (Immediate Indent Required)"]
     : ["4,850 MT", "2,500 MT", "7,350 MT"];
 
-  const approvalText = isProprietary
+  const approvalText = data?.approval_section?.approval_sought_for || (isProprietary
     ? `Approval is sought for procurement of ${qtyStr} of "${matName}" on Proprietary basis from ${vendor} at an estimated cost of ${estVal}.`
-    : `Approval is sought to initiate Open Tender enquiry through EPS for procurement of ${qtyStr} of "${matName}" with price discovery on monthly basis for 4,000 MT in first phase.`;
+    : `Approval is sought to initiate Open Tender enquiry through EPS for procurement of ${qtyStr} of "${matName}" with price discovery on monthly basis for 4,000 MT in first phase.`);
 
-  const dopText = isProprietary
+  const dopText = data?.approval_section?.dop_reference || (isProprietary
     ? "PCP-24 Clause 4.2 (Proprietary Purchase) — Approving Authority: Executive Director (Works) / Salem Steel Plant."
-    : "PCP-24 Clause 8.1 / Delegation of Powers Section 4.2 — Approving Authority: Executive Director (Works) / Salem Steel Plant.";
+    : "PCP-24 Clause 8.1 / Delegation of Powers Section 4.2 — Approving Authority: Executive Director (Works) / Salem Steel Plant.");
 
-  const notingData = isProprietary
-    ? [
-        ["1", "DGM (SMS-ELEC)", "Initiated", "Proposal submitted with Proprietary Certificate & OEM Justification"],
-        ["2", "AGM (MM-PURCHASE)", "Screened", "Indent screened and verified as per Checklist"],
-        ["3", "DGM (F&A)", "Concurred", "Budget provision available under Spares / Capital head"],
-        ["4", "GM (MM-STORES)", "Verified", "Stock and dues-in verified. Nil balance at site."],
-        ["5", "GM (SMS-O)", "Recommended", "Critical spare recommended for uninterrupted AOD converter operation"],
-        ["6", "CGM (Operations)", "Forwarded", "Recommended for approval of Competent Authority"],
-        ["7", "ED (Works)", "Approved", "Approved as proposed on proprietary basis"]
-      ]
-    : [
-        ["1", "SMS Operation", "Initiated", "Proposal submitted for TFC & ED approval"],
-        ["2", "Finance Dept", "Concurred", "Budget provision available under raw material code"],
-        ["3", "Materials Management", "Reviewed", "Mode of tender verified as Open Tender EPS"],
-        ["4", "TFC Committee", "Recommended", "Three parties order placement recommended"],
-        ["5", "CGM (Works)", "Forwarded", "Recommended for approval of ED (Works)"],
-        ["6", "ED (Works)", "Approved", "Approved as proposed"],
-        ["7", "Purchase Officer", "Actioned", "Tender enquiry processed on EPS portal"]
-      ];
+  const notingData: Array<[string, string, string, string]> = data?.approval_section?.notings && data.approval_section.notings.length > 0
+    ? data.approval_section.notings.map((n, idx) => [String(n.sno || idx + 1), n.action_by, n.action, n.comments])
+    : (isProprietary
+      ? [
+          ["1", "DGM (SMS-ELEC)", "Initiated", "Proposal submitted with Proprietary Certificate & OEM Justification"],
+          ["2", "AGM (MM-PURCHASE)", "Screened", "Indent screened and verified as per Checklist"],
+          ["3", "DGM (F&A)", "Concurred", "Budget provision available under Spares / Capital head"],
+          ["4", "GM (MM-STORES)", "Verified", "Stock and dues-in verified. Nil balance at site."],
+          ["5", "GM (SMS-O)", "Recommended", "Critical spare recommended for uninterrupted AOD converter operation"],
+          ["6", "CGM (Operations)", "Forwarded", "Recommended for approval of Competent Authority"],
+          ["7", "ED (Works)", "Approved", "Approved as proposed on proprietary basis"]
+        ]
+      : [
+          ["1", "SMS Operation", "Initiated", "Proposal submitted for TFC & ED approval"],
+          ["2", "Finance Dept", "Concurred", "Budget provision available under raw material code"],
+          ["3", "Materials Management", "Reviewed", "Mode of tender verified as Open Tender EPS"],
+          ["4", "TFC Committee", "Recommended", "Three parties order placement recommended"],
+          ["5", "CGM (Works)", "Forwarded", "Recommended for approval of ED (Works)"],
+          ["6", "ED (Works)", "Approved", "Approved as proposed"],
+          ["7", "Purchase Officer", "Actioned", "Tender enquiry processed on EPS portal"]
+        ]);
+
+  const attCount = data?.attachments?.count ?? 4;
+  const attFiles = data?.attachments?.files?.length
+    ? data.attachments.files.join(", ")
+    : "Annexure-I (Indent), Annexure-II (Estimate), Annexure-III (LPP PO Copy), Annexure-IV (Consumption & Stock)";
+  const propStatus = data?.approval_section?.status || "Approved";
+
+  const renderValue = (val: string) => {
+    if (!val) return val;
+    if (val.includes("[OCR UNCERTAIN — VERIFY FROM SOURCE]")) {
+      const parts = val.split("[OCR UNCERTAIN — VERIFY FROM SOURCE]");
+      return (
+        <span>
+          {parts[0]}
+          <span className="inline-block bg-amber-100 text-amber-900 border border-amber-400 px-1.5 py-0.5 rounded text-[10px] font-bold mx-1">
+            ⚠️ [OCR UNCERTAIN — VERIFY FROM SOURCE]
+          </span>
+          {parts[1]}
+        </span>
+      );
+    }
+    return val;
+  };
 
   return (
     <div className="space-y-5">
@@ -343,7 +373,7 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
                   {bgRows.map(([label, val], idx) => (
                     <tr key={idx} className="border-b border-slate-700">
                       <td className="w-2/5 p-1.5 font-bold border-r border-slate-700 bg-slate-50">{label}</td>
-                      <td className="w-3/5 p-1.5 text-slate-900">{val}</td>
+                      <td className="w-3/5 p-1.5 text-slate-900">{renderValue(val)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -354,13 +384,15 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
             <div className="space-y-2 pt-2 text-xs text-slate-800 leading-relaxed">
               <h4 className="font-bold text-sm text-slate-900">Proposal Details</h4>
               {proposalParagraphs.map((para, pIdx) => (
-                <p key={pIdx}>{para}</p>
+                <p key={pIdx}>{renderValue(para)}</p>
               ))}
-              <ul className="list-none space-y-1 pl-4">
-                {clauses.map((cl, cIdx) => (
-                  <li key={cIdx}>{cl}</li>
-                ))}
-              </ul>
+              {!hasDynamicProps && (
+                <ul className="list-none space-y-1 pl-4">
+                  {clauses.map((cl, cIdx) => (
+                    <li key={cIdx}>{renderValue(cl)}</li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div className="text-center text-xs text-slate-500 pt-6">Page 1</div>
@@ -372,9 +404,11 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
           <div className="space-y-4 relative">
             <div className="text-xs text-slate-500 font-mono">Page 2</div>
 
-            <p className="text-xs text-slate-800 pl-4">
-              ix. The successful tenderer shall submit 3% of total order value as Security Deposit (SD);
-            </p>
+            {!hasDynamicProps && (
+              <p className="text-xs text-slate-800 pl-4">
+                ix. The successful tenderer shall submit 3% of total order value as Security Deposit (SD);
+              </p>
+            )}
 
             {/* Consumption Details Table */}
             <div className="space-y-1 pt-2">
@@ -391,7 +425,7 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
                   {consData.map((row, idx) => (
                     <tr key={idx} className={`border-b border-slate-700 ${idx === consData.length - 1 ? 'font-bold bg-slate-50' : ''}`}>
                       {row.map((cell, cIdx) => (
-                        <td key={cIdx} className="p-2 border-r last:border-r-0 border-slate-700">{cell}</td>
+                        <td key={cIdx} className="p-2 border-r last:border-r-0 border-slate-700">{renderValue(cell)}</td>
                       ))}
                     </tr>
                   ))}
@@ -413,7 +447,7 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
                 <tbody>
                   <tr className="border-b border-slate-700 font-medium">
                     {stockData.map((sv, idx) => (
-                      <td key={idx} className="p-2.5 border-r last:border-r-0 border-slate-700">{sv}</td>
+                      <td key={idx} className="p-2.5 border-r last:border-r-0 border-slate-700">{renderValue(sv)}</td>
                     ))}
                   </tr>
                 </tbody>
@@ -424,7 +458,7 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
             <div className="space-y-1 pt-2 text-xs">
               <h4 className="font-bold text-sm text-slate-900">Approval Sought for</h4>
               <p className="text-slate-800">
-                {approvalText}
+                {renderValue(approvalText)}
               </p>
             </div>
 
@@ -432,7 +466,7 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
             <div className="space-y-1 pt-2 text-xs">
               <h4 className="font-bold text-sm text-slate-900">DOP / Manual / Circular Ref & Approver</h4>
               <p className="text-slate-800">
-                {dopText}
+                {renderValue(dopText)}
               </p>
             </div>
 
@@ -454,7 +488,7 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
                       <td className="p-1.5 border-r border-slate-700 text-center font-mono">{row[0]}</td>
                       <td className="p-1.5 border-r border-slate-700 font-semibold">{row[1]}</td>
                       <td className="p-1.5 border-r border-slate-700">{row[2]}</td>
-                      <td className="p-1.5 text-slate-700">{row[3]}</td>
+                      <td className="p-1.5 text-slate-700">{renderValue(row[3])}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -464,9 +498,9 @@ export const ProcurementTemplateView: React.FC<ProcurementTemplateViewProps> = (
             {/* Attachments */}
             <div className="space-y-1 pt-2 text-xs">
               <h4 className="font-bold text-sm text-slate-900">Attachments</h4>
-              <p>No. of attachments: 4</p>
-              <p>Attached Files: Annexure-I (Indent), Annexure-II (Estimate), Annexure-III (LPP PO Copy), Annexure-IV (Consumption & Stock)</p>
-              <p className="font-semibold text-emerald-700 pt-1">Proposal Status: Approved</p>
+              <p>No. of attachments: {attCount}</p>
+              <p>Attached Files: {attFiles}</p>
+              <p className="font-semibold text-emerald-700 pt-1">Proposal Status: {propStatus}</p>
             </div>
 
             {/* Initiator */}

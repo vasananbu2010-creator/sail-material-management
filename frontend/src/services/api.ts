@@ -22,6 +22,20 @@ export const api = {
     return res.json();
   },
 
+  async uploadDocuments(files: File[]): Promise<{ batch_id: string; documents: Array<{ document_id: string; filename: string; file_size: string }>; total_documents: number }> {
+    const formData = new FormData();
+    files.forEach((f) => formData.append('files', f));
+    const res = await fetch(`${API_BASE}/documents/upload-batch`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Batch upload failed' }));
+      throw new Error(err.detail || 'Failed to upload documents');
+    }
+    return res.json();
+  },
+
   async processDocument(
     docId: string,
     onProgress?: (progress: { current_step: number; step_label: string; step_detail: string; progress_percent: number }) => void
@@ -181,5 +195,11 @@ export const api = {
 
   getPreviewUrl(docId: string): string {
     return `${API_BASE}/documents/${docId}/preview`;
+  },
+
+  getBatchExportZipUrl(docIds: string[]): string {
+    const params = new URLSearchParams();
+    docIds.forEach((id) => params.append('doc_ids', id));
+    return `${API_BASE}/documents/batch-export?${params.toString()}`;
   },
 };

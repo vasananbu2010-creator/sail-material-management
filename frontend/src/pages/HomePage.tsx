@@ -23,7 +23,8 @@ import {
   Layers,
   FileSpreadsheet,
   FileSignature,
-  AlertTriangle
+  AlertTriangle,
+  FileText
 } from 'lucide-react';
 
 interface HomePageProps {
@@ -37,8 +38,11 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
   const [stepDetail, setStepDetail] = useState<string>('');
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [processingFileName, setProcessingFileName] = useState('');
+  const [documents, setDocuments] = useState<DocumentDetail[]>([]);
+  const [activeDocIndex, setActiveDocIndex] = useState<number>(0);
   const [activeDocument, setActiveDocument] = useState<DocumentDetail | null>(null);
   const [ocrText, setOcrText] = useState<string>('');
+  const [batchOcrTexts, setBatchOcrTexts] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'template' | 'structured' | 'table' | 'ocr' | 'preview'>('template');
   const [error, setError] = useState<string | null>(null);
   const [lastDocId, setLastDocId] = useState<string | null>(null);
@@ -68,8 +72,11 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
       const docDetails = await api.getDocument(docId);
       const ocrRes = await api.getDocumentOcr(docId);
 
+      setDocuments([docDetails]);
+      setActiveDocIndex(0);
       setActiveDocument(docDetails);
       setOcrText(ocrRes.raw_ocr_text);
+      setBatchOcrTexts({ [docDetails.id]: ocrRes.raw_ocr_text });
       setError(null);
       onRefreshDashboard();
     } catch (err: any) {
@@ -98,6 +105,68 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
     }
   };
 
+  const handleFilesSelected = async (files: File[]) => {
+    if (files.length === 1) {
+      await handleFileSelected(files[0]);
+      return;
+    }
+    setError(null);
+    try {
+      setIsProcessing(true);
+      setProcessingFileName(`Uploading ${files.length} documents...`);
+      setCurrentStep(1);
+      setProgressPercent(10);
+      setStepDetail('Uploading batch to server');
+
+      const batchRes = await api.uploadDocuments(files);
+      const processedDocs: DocumentDetail[] = [];
+      const ocrMap: Record<string, string> = {};
+
+      for (let i = 0; i < batchRes.documents.length; i++) {
+        const item = batchRes.documents[i];
+        setProcessingFileName(`[Doc ${i + 1}/${batchRes.documents.length}] ${item.filename}`);
+        setCurrentStep(2);
+        setStepDetail(`Processing document ${i + 1} of ${batchRes.documents.length}`);
+        setProgressPercent(Math.round((i / batchRes.documents.length) * 100) + 5);
+
+        try {
+          await api.processDocument(item.document_id, (info) => {
+            setCurrentStep(info.current_step);
+            setStepDetail(`[Doc ${i + 1}/${batchRes.documents.length}] ${info.step_detail}`);
+            const basePct = Math.round((i / batchRes.documents.length) * 100);
+            const docPct = Math.round((info.progress_percent / batchRes.documents.length));
+            setProgressPercent(Math.min(99, basePct + docPct));
+          });
+
+          const docDetails = await api.getDocument(item.document_id);
+          const ocrRes = await api.getDocumentOcr(item.document_id);
+          processedDocs.push(docDetails);
+          ocrMap[docDetails.id] = ocrRes.raw_ocr_text;
+        } catch (itemErr: any) {
+          console.error(`Failed to process ${item.filename}:`, itemErr);
+        }
+      }
+
+      if (processedDocs.length === 0) {
+        throw new Error('All documents in the batch failed to process.');
+      }
+
+      setDocuments(processedDocs);
+      setActiveDocIndex(0);
+      setActiveDocument(processedDocs[0]);
+      setOcrText(ocrMap[processedDocs[0].id] || '');
+      setBatchOcrTexts(ocrMap);
+      setCurrentStep(7);
+      setProgressPercent(100);
+      setStepDetail('Batch processing complete');
+      onRefreshDashboard();
+    } catch (err: any) {
+      setError(err.message || 'Batch processing failed.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleLoadDemo = async (demoId: string) => {
     setError(null);
     try {
@@ -118,14 +187,17 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
   };
 
   const handleReset = () => {
+    setDocuments([]);
+    setActiveDocIndex(0);
     setActiveDocument(null);
     setOcrText('');
+    setBatchOcrTexts({});
     setError(null);
     setLastDocId(null);
     setCurrentStep(1);
     setStepDetail('');
     setProgressPercent(0);
-    setActiveTab('structured');
+    setActiveTab('template');
   };
 
   return (
@@ -190,6 +262,7 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
             <div className="lg:col-span-8">
               <UploadCard
                 onFileSelected={handleFileSelected}
+                onFilesSelected={handleFilesSelected}
                 onLoadDemo={handleLoadDemo}
                 isProcessing={isProcessing}
               />
@@ -224,6 +297,48 @@ export const HomePage: React.FC<HomePageProps> = ({ dashboardData, onRefreshDash
       {/* Results Page (Sections 5, 7, 8, 9, 10, 28) */}
       {activeDocument && !isProcessing && (
         <div className="space-y-6 animate-fadeIn">
+          {/* Multi-Document Selector Bar for Batches */}
+          {documents.length > 1 && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#16232D] border border-[#435568] p-3 rounded-xl gap-3 shadow-lg">
+              <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+                <span className="text-xs font-bold text-[#A9C9EE] px-1 whitespace-nowrap">
+                  Batch ({documents.length} Docs):
+                </span>
+                {documents.map((doc, idx) => (
+                  <button
+                    key={doc.id}
+                    onClick={() => {
+                      setActiveDocIndex(idx);
+                      setActiveDocument(doc);
+                      setOcrText(batchOcrTexts[doc.id] || '');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                      activeDocIndex === idx
+                        ? 'bg-[#24313C] text-[#A9C9EE] border border-[#A9C9EE]/60 shadow-sm'
+                        : 'text-[#B8C4D0] hover:text-[#F0F4F8] hover:bg-[#24313C]/40 border border-transparent'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span className="truncate max-w-[150px]">{idx + 1}. {doc.original_name}</span>
+                    <span className="text-[10px] bg-emerald-950/60 text-emerald-400 border border-emerald-700/60 px-1.5 py-0.2 rounded-full">
+                      {doc.overall_confidence || 'High'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <a
+                href={api.getBatchExportZipUrl(documents.map(d => d.id))}
+                download="SAIL_Batch_Export.zip"
+                className="btn-accent px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md shrink-0 whitespace-nowrap ml-auto cursor-pointer"
+                title="Download consolidated ZIP archive of all documents"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Export Batch (ZIP)</span>
+              </a>
+            </div>
+          )}
+
           {/* Analysis Complete Banner */}
           <div className="glass-card rounded-2xl p-6 border border-[#435568] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
             <div className="space-y-1">

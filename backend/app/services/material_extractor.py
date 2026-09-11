@@ -367,3 +367,8 @@ class MaterialExtractor:
         return None
 
 material_extractor = MaterialExtractor()
+
+def extract_materials_rule_based(text: str, tables: Optional[List[List[List[str]]]] = None) -> List[Dict[str, Any]]:
+    """Helper function to extract materials using rule-based strategies."""
+    return material_extractor.extract_materials(text, tables or [])
+

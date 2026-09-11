@@ -111,26 +111,26 @@ def generate_procurement_template_pdf(structured_data: Dict[str, Any], original_
     raw_init_pno = doc_info.get("initiator_pno")
     raw_init_desig = doc_info.get("initiator_designation")
 
-    if raw_init_name and raw_init_name not in ["Not Available", ""]:
+    if raw_init_name and raw_init_name not in ["Not Available", "", "Not available in source document"]:
         initiator_name = raw_init_name
     elif is_proprietary:
         initiator_name = "C Satyanarayanan"
     else:
-        initiator_name = "THANIYARASU M N"
+        initiator_name = raw_init_name or "Not available in source document"
 
-    if raw_init_pno and raw_init_pno not in ["Not Available", ""]:
+    if raw_init_pno and raw_init_pno not in ["Not Available", "", "Not available in source document"]:
         initiator_pno = raw_init_pno
     elif is_proprietary:
         initiator_pno = "1001390"
     else:
-        initiator_pno = "0001022"
+        initiator_pno = raw_init_pno or "Not available in source document"
 
-    if raw_init_desig and raw_init_desig not in ["Not Available", ""]:
+    if raw_init_desig and raw_init_desig not in ["Not Available", "", "Not available in source document"]:
         initiator_desig = raw_init_desig
     elif is_proprietary:
         initiator_desig = "DGM (SMS-Electrical)"
     else:
-        initiator_desig = "GM (SMS-OPN)"
+        initiator_desig = raw_init_desig or "Not available in source document"
 
     subject_val = f"Proposal for procurement of {qty_str} of &quot;{mat_name}&quot; on {'Proprietary' if is_proprietary else 'Open Tender'} basis{' from ' + vendor if is_proprietary else ' with price discovery on monthly basis'}."
 
@@ -200,7 +200,10 @@ def generate_procurement_template_pdf(structured_data: Dict[str, Any], original_
     # Background of the Proposal Header & Table
     story.append(Paragraph("Background of the Proposal", section_head))
 
-    if is_proprietary:
+    dynamic_bg = structured_data.get("background_points")
+    if dynamic_bg and len(dynamic_bg) > 0:
+        bg_rows = [[item.get("label", ""), str(item.get("value", "Not Available"))] for item in dynamic_bg]
+    elif is_proprietary:
         bg_rows = [
             ["i) Indenter", department],
             ["ii) Indent ref no & date", f"{reference} dt: {date_val}"],
@@ -294,16 +297,21 @@ def generate_procurement_template_pdf(structured_data: Dict[str, Any], original_
             "viii. Payment term will be \"100% payment within 15 days from the date of acceptance supported by GARN/SRV and 3rd party certificate\";"
         ]
 
-    story.append(Paragraph(p1, body_txt))
-    story.append(Paragraph(p2, body_txt))
-    story.append(Paragraph(p3, body_txt))
-    story.append(Paragraph(p4, body_txt))
-    story.append(Paragraph(p5, body_txt))
-    story.append(Paragraph(p6, body_txt))
-    story.append(Paragraph(p7, body_txt))
+    dynamic_props = structured_data.get("proposal_details")
+    if dynamic_props and len(dynamic_props) > 0:
+        for pt in dynamic_props:
+            story.append(Paragraph(pt, body_txt))
+    else:
+        story.append(Paragraph(p1, body_txt))
+        story.append(Paragraph(p2, body_txt))
+        story.append(Paragraph(p3, body_txt))
+        story.append(Paragraph(p4, body_txt))
+        story.append(Paragraph(p5, body_txt))
+        story.append(Paragraph(p6, body_txt))
+        story.append(Paragraph(p7, body_txt))
 
-    for cl in clauses:
-        story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{cl}", body_txt))
+        for cl in clauses:
+            story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{cl}", body_txt))
 
     story.append(Spacer(1, 4))
     story.append(Paragraph("Page 1", page_num))
@@ -398,19 +406,14 @@ def generate_procurement_template_pdf(structured_data: Dict[str, Any], original_
 
     # Approval Sought for
     story.append(Paragraph("Approval Sought for", section_head))
-    if is_proprietary:
-        approval_text = f"Approval is sought for procurement of {qty_str} of &quot;{mat_name}&quot; on Proprietary basis from {vendor} at an estimated cost of {est_val}."
-    else:
-        approval_text = f"Approval is sought to initiate Open Tender enquiry through EPS for procurement of {qty_str} of &quot;{mat_name}&quot; with price discovery on monthly basis for 4,000 MT in first phase."
+    dynamic_appr = structured_data.get("approval_section", {})
+    approval_text = dynamic_appr.get("approval_sought_for") or (f"Approval is sought for procurement of {qty_str} of &quot;{mat_name}&quot; on Proprietary basis from {vendor} at an estimated cost of {est_val}." if is_proprietary else f"Approval is sought to initiate Open Tender enquiry through EPS for procurement of {qty_str} of &quot;{mat_name}&quot; with price discovery on monthly basis for 4,000 MT in first phase.")
     story.append(Paragraph(approval_text, body_txt))
     story.append(Spacer(1, 3))
 
     # DOP Ref
     story.append(Paragraph("DOP / Manual / Circular Ref & Approver", section_head))
-    if is_proprietary:
-        dop_text = "PCP-24 Clause 4.2 (Proprietary Purchase) - Approving Authority: Executive Director (Works) / Salem Steel Plant."
-    else:
-        dop_text = "PCP-24 Clause 8.1 / Delegation of Powers Section 4.2 - Approving Authority: Executive Director (Works) / Salem Steel Plant."
+    dop_text = dynamic_appr.get("dop_reference") or ("PCP-24 Clause 4.2 (Proprietary Purchase) - Approving Authority: Executive Director (Works) / Salem Steel Plant." if is_proprietary else "PCP-24 Clause 8.1 / Delegation of Powers Section 4.2 - Approving Authority: Executive Director (Works) / Salem Steel Plant.")
     story.append(Paragraph(dop_text, body_txt))
     story.append(Spacer(1, 3))
 
@@ -422,7 +425,16 @@ def generate_procurement_template_pdf(structured_data: Dict[str, Any], original_
         Paragraph("<b>Action</b>", tbl_hdr),
         Paragraph("<b>Comments</b>", tbl_hdr)
     ]
-    if is_proprietary:
+    dynamic_notings = dynamic_appr.get("notings")
+    if dynamic_notings and len(dynamic_notings) > 0:
+        noting_rows = [notings_hdr] + [
+            [Paragraph(str(n.get("sno", i + 1)), tbl_cell),
+             Paragraph(n.get("action_by", ""), tbl_cell),
+             Paragraph(n.get("action", ""), tbl_cell),
+             Paragraph(n.get("comments", ""), tbl_cell)]
+            for i, n in enumerate(dynamic_notings)
+        ]
+    elif is_proprietary:
         noting_rows = [
             notings_hdr,
             [Paragraph("1", tbl_cell), Paragraph("DGM (SMS-ELEC)", tbl_cell), Paragraph("Initiated", tbl_cell), Paragraph("Proposal submitted with Proprietary Certificate & OEM Justification", tbl_cell)],
@@ -458,9 +470,26 @@ def generate_procurement_template_pdf(structured_data: Dict[str, Any], original_
 
     # Attachments & Status
     story.append(Paragraph("Attachments", section_head))
-    story.append(Paragraph("No. of attachments: 4", body_txt))
-    story.append(Paragraph("Attached Files: Annexure-I (Indent), Annexure-II (Estimate), Annexure-III (LPP PO Copy), Annexure-IV (Consumption & Stock)", body_txt))
-    story.append(Paragraph("<b>Proposal Status:</b> <font color='#006600'><b>Approved</b></font>", body_txt))
+    dynamic_att = structured_data.get("attachments")
+    if isinstance(dynamic_att, list) and len(dynamic_att) > 0:
+        att_count = len(dynamic_att)
+        att_files = [
+            f"{a.get('annexure_no', f'Annexure-{i+1}')} ({a.get('description', 'Referenced')})"
+            if isinstance(a, dict) else str(a)
+            for i, a in enumerate(dynamic_att)
+        ]
+        att_str = ", ".join(att_files)
+    elif isinstance(dynamic_att, dict):
+        att_count = dynamic_att.get("count", 4)
+        att_files = dynamic_att.get("files", [])
+        att_str = ", ".join(att_files) if att_files else "Annexure-I (Indent), Annexure-II (Estimate), Annexure-III (LPP PO Copy), Annexure-IV (Consumption & Stock)"
+    else:
+        att_count = 4
+        att_str = "Annexure-I (Indent), Annexure-II (Estimate), Annexure-III (LPP PO Copy), Annexure-IV (Consumption & Stock)"
+    story.append(Paragraph(f"No. of attachments: {att_count}", body_txt))
+    story.append(Paragraph(f"Attached Files: {att_str}", body_txt))
+    prop_status = dynamic_appr.get("status", "Approved") if dynamic_appr else "Approved"
+    story.append(Paragraph(f"<b>Proposal Status:</b> <font color='#006600'><b>{prop_status}</b></font>", body_txt))
     story.append(Spacer(1, 3))
 
     # Initiator signature block

@@ -111,6 +111,19 @@ export interface FixedOutputTemplate {
   additional_information: AdditionalInformation;
   confidence: ConfidenceInformation;
   source_document: SourceDocumentInformation;
+  background_points?: Array<{ label: string; value: string }>;
+  proposal_details?: string[];
+  tables?: any[];
+  approval_section?: {
+    approval_sought_for?: string;
+    dop_reference?: string;
+    notings?: Array<{ sno: number | string; action_by: string; action: string; comments: string }>;
+    status?: string;
+  };
+  attachments?: {
+    count?: number;
+    files?: string[];
+  };
 }
 
 export interface DocumentDetail {

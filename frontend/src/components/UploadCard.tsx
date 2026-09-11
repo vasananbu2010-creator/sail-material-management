@@ -2,7 +2,8 @@ import React, { useState, useRef } from 'react';
 import { FileUp, FileText, AlertCircle, Sparkles, CheckCircle2, ArrowRight } from 'lucide-react';
 
 interface UploadCardProps {
-  onFileSelected: (file: File) => void;
+  onFileSelected?: (file: File) => void;
+  onFilesSelected?: (files: File[]) => void;
   onLoadDemo: (demoId: string) => void;
   isProcessing: boolean;
 }
@@ -12,34 +13,42 @@ const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
 export const UploadCard: React.FC<UploadCardProps> = ({
   onFileSelected,
+  onFilesSelected,
   onLoadDemo,
   isProcessing,
 }) => {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleValidateAndSelect = (file: File) => {
+  const handleValidateAndSelect = (files: File[]) => {
     setError(null);
-    if (file.size > MAX_SIZE_BYTES) {
-      setError('File size exceeds the maximum limit of 30 MB.');
-      return;
-    }
-    if (file.size === 0) {
-      setError('Uploaded file is empty (0 bytes).');
-      return;
-    }
+    if (!files || files.length === 0) return;
 
-    const ext = file.name.split('.').pop()?.toLowerCase();
     const validExts = ['pdf', 'docx', 'doc', 'xlsx', 'xls', 'png', 'jpg', 'jpeg'];
-    if (!ext || !validExts.includes(ext)) {
-      setError(`Unsupported file format (.${ext}). Supported: PDF, DOCX, DOC, XLSX, XLS, PNG, JPG.`);
-      return;
+    for (const file of files) {
+      if (file.size > MAX_SIZE_BYTES) {
+        setError(`"${file.name}" exceeds the maximum limit of 30 MB.`);
+        return;
+      }
+      if (file.size === 0) {
+        setError(`"${file.name}" is empty (0 bytes).`);
+        return;
+      }
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (!ext || !validExts.includes(ext)) {
+        setError(`"${file.name}" has unsupported format (.${ext}). Supported: PDF, DOCX, DOC, XLSX, XLS, PNG, JPG.`);
+        return;
+      }
     }
 
-    setSelectedFile(file);
-    onFileSelected(file);
+    setSelectedFiles(files);
+    if (onFilesSelected) {
+      onFilesSelected(files);
+    } else if (onFileSelected) {
+      onFileSelected(files[0]);
+    }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -48,13 +57,13 @@ export const UploadCard: React.FC<UploadCardProps> = ({
     if (isProcessing) return;
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleValidateAndSelect(e.dataTransfer.files[0]);
+      handleValidateAndSelect(Array.from(e.dataTransfer.files));
     }
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleValidateAndSelect(e.target.files[0]);
+      handleValidateAndSelect(Array.from(e.target.files));
     }
   };
 
@@ -85,6 +94,7 @@ export const UploadCard: React.FC<UploadCardProps> = ({
           ref={fileInputRef}
           onChange={handleFileInputChange}
           accept=".pdf,.docx,.doc,.xlsx,.xls,.png,.jpg,.jpeg"
+          multiple
           className="hidden"
         />
 
@@ -95,10 +105,10 @@ export const UploadCard: React.FC<UploadCardProps> = ({
 
         {/* Headings */}
         <h2 className="text-2xl sm:text-3xl font-bold tracking-wide text-[#F0F4F8] mb-2">
-          UPLOAD YOUR PDF
+          UPLOAD YOUR PDF(S)
         </h2>
         <p className="text-sm font-medium text-[#B8C4D0] mb-6">
-          (Max 30 MB)
+          Single or Multiple Documents (Max 30 MB each)
         </p>
 
         {/* Select File Button */}
@@ -110,28 +120,28 @@ export const UploadCard: React.FC<UploadCardProps> = ({
             className="btn-accent px-8 py-3.5 rounded-lg text-sm uppercase tracking-wider font-bold shadow-lg flex items-center gap-2 cursor-pointer transition-all hover:scale-105 active:scale-95"
           >
             <FileText className="w-4 h-4" />
-            Select File
+            Select File(s)
           </button>
         </div>
 
         <p className="text-xs text-[#B8C4D0]/80 mb-2">
-          Drag & drop your procurement document here, or click to browse
+          Drag & drop your procurement document(s) here, or click to browse
         </p>
         <p className="text-[11px] text-[#B8C4D0]/60">
-          Supported: PDF (digital & scanned OCR), DOCX, DOC, XLSX, XLS, PNG, JPG
+          Supported: PDF (digital & scanned OCR), DOCX, DOC, XLSX, XLS, PNG, JPG • Single & Batch
         </p>
 
-        {/* Selected File Details */}
-        {selectedFile && !error && (
+        {/* Selected File(s) Details */}
+        {selectedFiles.length === 1 && !error && (
           <div className="mt-6 bg-[#16232D] border border-[#435568] rounded-xl p-4 text-left flex items-center justify-between">
             <div className="flex items-center space-x-3 overflow-hidden">
               <div className="p-2 rounded-lg bg-[#24313C] text-[#A9C9EE]">
                 <FileText className="w-5 h-5" />
               </div>
               <div className="truncate">
-                <p className="text-sm font-semibold text-[#F0F4F8] truncate">{selectedFile.name}</p>
+                <p className="text-sm font-semibold text-[#F0F4F8] truncate">{selectedFiles[0].name}</p>
                 <p className="text-xs text-[#B8C4D0]">
-                  {formatSize(selectedFile.size)} • {selectedFile.name.split('.').pop()?.toUpperCase()} Document
+                  {formatSize(selectedFiles[0].size)} • {selectedFiles[0].name.split('.').pop()?.toUpperCase()} Document
                 </p>
               </div>
             </div>
@@ -139,6 +149,31 @@ export const UploadCard: React.FC<UploadCardProps> = ({
               <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
               Validated
             </span>
+          </div>
+        )}
+
+        {selectedFiles.length > 1 && !error && (
+          <div className="mt-6 bg-[#16232D] border border-[#435568] rounded-xl p-4 text-left space-y-2.5">
+            <div className="flex items-center justify-between border-b border-[#435568]/60 pb-2">
+              <div className="flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-[#A9C9EE]" />
+                <span className="text-xs font-bold text-[#F0F4F8]">
+                  {selectedFiles.length} Documents Selected for Batch Processing
+                </span>
+              </div>
+              <span className="flex items-center text-xs font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 px-2 py-0.5 rounded-full">
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                All Validated
+              </span>
+            </div>
+            <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+              {selectedFiles.map((f, i) => (
+                <div key={i} className="flex items-center justify-between text-xs py-1 px-2 rounded bg-[#24313C]/60">
+                  <span className="text-[#F0F4F8] truncate max-w-md">{i + 1}. {f.name}</span>
+                  <span className="text-[#B8C4D0] font-mono shrink-0 ml-2">{formatSize(f.size)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

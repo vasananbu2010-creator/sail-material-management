@@ -328,3 +328,21 @@ class DocumentParser:
         }
 
 document_parser = DocumentParser()
+
+def extract_pdf_pages(file_bytes: bytes, original_filename: str) -> Dict[str, Any]:
+    """Helper to extract pages and tables directly from PDF bytes."""
+    suffix = pathlib.Path(original_filename).suffix or ".pdf"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+    try:
+        res = document_parser.parse_file(tmp_path, original_filename)
+        res["raw_text"] = res.get("text", "")
+        res["total_pages"] = res.get("page_count", 0)
+        return res
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+

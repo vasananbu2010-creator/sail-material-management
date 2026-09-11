@@ -132,26 +132,9 @@ def generate_procurement_template_docx(structured_data: Dict[str, Any], original
     raw_init_pno = doc_info.get("initiator_pno")
     raw_init_desig = doc_info.get("initiator_designation")
 
-    if raw_init_name and raw_init_name not in ["Not Available", ""]:
-        initiator_name = raw_init_name
-    elif is_proprietary:
-        initiator_name = "C Satyanarayanan"
-    else:
-        initiator_name = "THANIYARASU M N"
-
-    if raw_init_pno and raw_init_pno not in ["Not Available", ""]:
-        initiator_pno = raw_init_pno
-    elif is_proprietary:
-        initiator_pno = "1001390"
-    else:
-        initiator_pno = "0001022"
-
-    if raw_init_desig and raw_init_desig not in ["Not Available", ""]:
-        initiator_desig = raw_init_desig
-    elif is_proprietary:
-        initiator_desig = "DGM (SMS-Electrical)"
-    else:
-        initiator_desig = "GM (SMS-OPN)"
+    initiator_name = clean_str(raw_init_name, 40, "Not available in source document")
+    initiator_pno = clean_str(raw_init_pno, 30, "Not available in source document")
+    initiator_desig = clean_str(raw_init_desig, 40, "Not available in source document")
 
     subject_val = f"Proposal for procurement of {qty_str} of \"{mat_name}\" on {'Proprietary' if is_proprietary else 'Open Tender'} basis{' from ' + vendor if is_proprietary else ' with price discovery on monthly basis'}."
 
@@ -223,7 +206,10 @@ def generate_procurement_template_docx(structured_data: Dict[str, Any], original
     # Background of the Proposal Section
     add_heading(doc, "Background of the Proposal")
 
-    if is_proprietary:
+    dynamic_bg = structured_data.get("background_points")
+    if dynamic_bg and len(dynamic_bg) > 0:
+        bg_rows = [(item.get("label", ""), str(item.get("value", "Not Available"))) for item in dynamic_bg]
+    elif is_proprietary:
         bg_rows = [
             ("i) Indenter", department),
             ("ii) Indent ref no & date", f"{reference} dt: {date_val}"),
@@ -311,11 +297,15 @@ def generate_procurement_template_docx(structured_data: Dict[str, Any], original
             "viii. Payment term will be \"100% payment within 15 days from the date of acceptance supported by GARN/SRV and 3rd party certificate\";"
         ]
 
-    for p_txt in [p1, p2, p3, p4, p5, p6, p7]:
-        add_p(doc, p_txt, font_size=7.2, space_after=1.5)
-
-    for cl in clauses:
-        add_p(doc, f"    {cl}", font_size=7.2, space_after=1)
+    dynamic_props = structured_data.get("proposal_details")
+    if dynamic_props and len(dynamic_props) > 0:
+        for pt in dynamic_props:
+            add_p(doc, pt, font_size=7.2, space_after=1.5)
+    else:
+        for p_txt in [p1, p2, p3, p4, p5, p6, p7]:
+            add_p(doc, p_txt, font_size=7.2, space_after=1.5)
+        for cl in clauses:
+            add_p(doc, f"    {cl}", font_size=7.2, space_after=1)
 
     # =========================================================================
     # PAGE 2
@@ -388,24 +378,25 @@ def generate_procurement_template_docx(structured_data: Dict[str, Any], original
 
     # Approval Sought for
     add_heading(doc, "Approval Sought for")
-    if is_proprietary:
-        approval_text = f"Approval is sought for procurement of {qty_str} of \"{mat_name}\" on Proprietary basis from {vendor} at an estimated cost of {est_val}."
-    else:
-        approval_text = f"Approval is sought to initiate Open Tender enquiry through EPS for procurement of {qty_str} of \"{mat_name}\" with price discovery on monthly basis for 4,000 MT in first phase."
+    dynamic_appr = structured_data.get("approval_section", {})
+    approval_text = dynamic_appr.get("approval_sought_for") or (f"Approval is sought for procurement of {qty_str} of \"{mat_name}\" on Proprietary basis from {vendor} at an estimated cost of {est_val}." if is_proprietary else f"Approval is sought to initiate Open Tender enquiry through EPS for procurement of {qty_str} of \"{mat_name}\" with price discovery on monthly basis for 4,000 MT in first phase.")
     add_p(doc, approval_text, font_size=7.5, space_after=3)
 
     # DOP Ref
     add_heading(doc, "DOP / Manual / Circular Ref & Approver")
-    if is_proprietary:
-        dop_text = "PCP-24 Clause 4.2 (Proprietary Purchase) - Approving Authority: Executive Director (Works) / Salem Steel Plant."
-    else:
-        dop_text = "PCP-24 Clause 8.1 / Delegation of Powers Section 4.2 - Approving Authority: Executive Director (Works) / Salem Steel Plant."
+    dop_text = dynamic_appr.get("dop_reference") or ("PCP-24 Clause 4.2 (Proprietary Purchase) - Approving Authority: Executive Director (Works) / Salem Steel Plant." if is_proprietary else "PCP-24 Clause 8.1 / Delegation of Powers Section 4.2 - Approving Authority: Executive Director (Works) / Salem Steel Plant.")
     add_p(doc, dop_text, font_size=7.5, space_after=3)
 
     # Notings Table
     add_heading(doc, "Notings")
     notings_headers = ["SNo", "Action By", "Action", "Comments"]
-    if is_proprietary:
+    dynamic_notings = dynamic_appr.get("notings")
+    if dynamic_notings and len(dynamic_notings) > 0:
+        noting_data = [
+            [str(n.get("sno", idx + 1)), n.get("action_by", ""), n.get("action", ""), n.get("comments", "")]
+            for idx, n in enumerate(dynamic_notings)
+        ]
+    elif is_proprietary:
         noting_data = [
             ["1", "DGM (SMS-ELEC)", "Initiated", "Proposal submitted with Proprietary Certificate & OEM Justification"],
             ["2", "AGM (MM-PURCHASE)", "Screened", "Indent screened and verified as per Checklist"],
@@ -449,9 +440,26 @@ def generate_procurement_template_docx(structured_data: Dict[str, Any], original
 
     # Attachments & Status
     add_heading(doc, "Attachments")
-    add_p(doc, "No. of attachments: 4", font_size=7.5, space_after=1)
-    add_p(doc, "Attached Files: Annexure-I (Indent), Annexure-II (Estimate), Annexure-III (LPP PO Copy), Annexure-IV (Consumption & Stock)", font_size=7.5, space_after=1)
-    add_p(doc, "Proposal Status: Approved", bold=True, font_size=8, color_rgb=(0, 128, 0), space_after=4)
+    dynamic_att = structured_data.get("attachments")
+    if isinstance(dynamic_att, list) and len(dynamic_att) > 0:
+        att_count = len(dynamic_att)
+        att_files = [
+            f"{a.get('annexure_no', f'Annexure-{i+1}')} ({a.get('description', 'Referenced')})"
+            if isinstance(a, dict) else str(a)
+            for i, a in enumerate(dynamic_att)
+        ]
+        att_str = ", ".join(att_files)
+    elif isinstance(dynamic_att, dict):
+        att_count = dynamic_att.get("count", 4)
+        att_files = dynamic_att.get("files", [])
+        att_str = ", ".join(att_files) if att_files else "Annexure-I (Indent), Annexure-II (Estimate), Annexure-III (LPP PO Copy), Annexure-IV (Consumption & Stock)"
+    else:
+        att_count = 4
+        att_str = "Annexure-I (Indent), Annexure-II (Estimate), Annexure-III (LPP PO Copy), Annexure-IV (Consumption & Stock)"
+    add_p(doc, f"No. of attachments: {att_count}", font_size=7.5, space_after=1)
+    add_p(doc, f"Attached Files: {att_str}", font_size=7.5, space_after=1)
+    prop_status = dynamic_appr.get("status", "Approved") if dynamic_appr else "Approved"
+    add_p(doc, f"Proposal Status: {prop_status}", bold=True, font_size=8, color_rgb=(0, 128, 0), space_after=4)
 
     # Initiator signature block
     add_heading(doc, "Initiator")

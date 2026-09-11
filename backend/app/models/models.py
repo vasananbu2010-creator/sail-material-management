@@ -19,6 +19,7 @@ class Document(Base):
     file_type = Column(String(50), nullable=False)
     file_size_bytes = Column(Integer, nullable=False)
     page_count = Column(Integer, default=1)
+    batch_id = Column(String(36), nullable=True, index=True)
     status = Column(String(50), default="UPLOADED")  # UPLOADED, PROCESSING, COMPLETED, FAILED
     upload_timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     processing_timestamp = Column(DateTime, nullable=True)

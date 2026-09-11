@@ -48,6 +48,7 @@ def init_db():
                 ("step_label", "VARCHAR(200)", "'Uploaded'"),
                 ("step_detail", "VARCHAR(500)", "'Ready for processing'"),
                 ("progress_percent", "INTEGER", "0"),
+                ("batch_id", "VARCHAR(36)", "NULL"),
             ]:
                 try:
                     conn.execute(text(f"ALTER TABLE documents ADD COLUMN {col} {col_type} DEFAULT {default_val}"))

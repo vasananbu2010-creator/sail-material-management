@@ -111,6 +111,13 @@ class FixedOutputTemplate(BaseModel):
     confidence: ConfidenceInformation = Field(default_factory=ConfidenceInformation)
     source_document: SourceDocumentInformation = Field(default_factory=SourceDocumentInformation)
 
+    # Indent Structure Sections (Requirements 8, 9, 10, 11)
+    background_points: List[Dict[str, str]] = Field(default_factory=list)
+    proposal_details: List[str] = Field(default_factory=list)
+    tables: List[Dict[str, Any]] = Field(default_factory=list)
+    approval_section: Dict[str, Any] = Field(default_factory=dict)
+    attachments: List[Dict[str, str]] = Field(default_factory=list)
+
 # Document Detail Response
 class DocumentResponse(BaseModel):
     id: str
